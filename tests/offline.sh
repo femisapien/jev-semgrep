@@ -1743,8 +1743,14 @@ hints hidden by default (source): ok
 hover reveal is scoped to the icon, not the whole row: ok
 a shown hint never blocks clicks (pointer-events: none): ok
 keyboard-focus of the icon and tap both reveal: ok
+the tooltip is left-aligned to its icon, not centered under it: ok
+rank/summarize (right side of their row) right-align instead: ok
+multi-step and edges open above their icon, not over what is below: ok
+the bottom-banner fallback is back to <=480px, not 1200px: ok
 no stray rule overrides a hint's display beyond those three: ok
 hint-step explains the walk: starts-with-Finds=true lines=4
+a label with a \"?\" no longer also carries a duplicate title=: step ok, rank ok, summarize ok
+--hops keeps its own title= (not a duplicate): ok
 first start row: 3 children (select, input, delete)
 the first start field is a question (-Q) by default: ok
 steps hidden: -e '/def main/'
@@ -1792,7 +1798,7 @@ reopening clears the previous save message: sst=\"\", body scroll locked=true
 a backdrop click closes the dialog: open=false
 hints start closed: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
 tapping the rank \"?\" opens only it: step:false/closed edges:false/closed rank:true/open summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
-Esc closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+Esc closes it and blurs the icon (no lingering :focus-visible): step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed, focus dropped=true
 tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
 a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
