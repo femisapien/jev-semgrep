@@ -41,10 +41,9 @@ class El {
   // <dialog>: a no-op model good enough for the page's own onclose/backdrop-click logic to run against.
   showModal() { this.open = true; }
   close() { this.open = false; this.onclose?.(); }
-  // no layout engine here, so clampHint() (which only reads this to decide whether to nudge) sees an
-  // always-in-bounds rect and never applies a shift; the clamp itself is checked by hand in a real browser,
-  // not by this offline suite.
-  getBoundingClientRect() { return { left: 100, right: 100, top: 0, bottom: 0, width: 0, height: 0 }; }
+  // no layout engine here: by default a hidden (zero-width) box, so clampHint() leaves a hint alone; a test that
+  // drives the clamp sets rect, or a function of the element's inline style for a box that moves when restyled.
+  getBoundingClientRect() { return typeof this.rect === 'function' ? this.rect(this.style) : this.rect ?? { left: 100, right: 100, top: 0, bottom: 0, width: 0, height: 0 }; }
   get textContent() { return this.text; }
   set textContent(t) { this.children = []; this.text = t; }
   set innerHTML(h) { this.children = []; for (const [, t, a] of h.matchAll(/<(select|input|button)(\s[^>]*)?>/g)) this.append(new El(t, a ?? '')); }
@@ -144,12 +143,13 @@ byId.f.elements = byId.sf.elements = elements;
 }
 const sent = [];
 const document = {
-  getElementById: id => byId[id] ?? null, createElement: t => new El(t), activeElement: null, ls: {}, body: new El('body'),
+  getElementById: id => byId[id] ?? null, createElement: t => new El(t), activeElement: null, ls: {}, body: new El('body'), documentElement: { clientWidth: 1000, clientHeight: 800 },
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); },
   _fire(t, e) { for (const fn of this.ls[t] ?? []) fn(e); },
 };
 const page = fetch, ctx = vm.createContext({
-  document, setTimeout, URLSearchParams, AbortController, console, navigator: {}, window: { innerWidth: 1000 },
+  document, setTimeout, URLSearchParams, AbortController, console, navigator: {}, window: { ls: {}, addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); } },
+  getComputedStyle: el => ({ position: el.position ?? 'absolute' }),
   // a browser adds Origin to a POST; Node's fetch does not
   fetch: (path, o) => { sent.push(new URL(path, U).searchParams); return page(new URL(path, U), o?.method === 'POST' ? { ...o, headers: { ...o.headers, origin: new URL(U).origin } } : o); },
 });
@@ -282,6 +282,8 @@ const hintState = () => hintNames.map(n => `${n}:${byId['q-' + n].getAttribute('
 console.log(`hints start closed: ${hintState()}`);
 byId['q-rank'].focus(); byId['q-rank'].onclick();
 console.log(`tapping the rank "?" opens only it: ${hintState()}`);
+// #214 review: Enter/Space on a "?" is a click on it; that "?" keeps focus (only the others are blurred).
+console.log(`the "?" it opened keeps focus: ${document.activeElement === byId['q-rank']}`);
 document._fire('keydown', { key: 'Escape' });
 // r2 review: Esc must drop real focus too, or a lingering :focus-visible keeps the tip shown after .open is gone.
 console.log(`Esc closes it and blurs the icon (no lingering :focus-visible): ${hintState()}, focus dropped=${document.activeElement !== byId['q-rank']}`);
@@ -290,3 +292,28 @@ byId['q-edges'].onclick();
 console.log(`tapping a second "?" closes the first: ${hintState()}`);
 document._fire('click', {});
 console.log(`a tap elsewhere closes it: ${hintState()}`);
+// clampHint on a tap, in a 1000x800 viewport (documentElement.clientWidth/Height), against boxes laid out by hand:
+// icon = the "?"'s .hintctl; the 360px tooltip is measured right-aligned to it, at a height that depends on its
+// inline style (y: style => [top, bottom]).
+const tap = (n, icon, y, position) => {
+  Object.assign(byId['hint-' + n].parentElement, { rect: { width: 16, right: icon.left + 16, ...icon } });
+  Object.assign(byId['hint-' + n], { position, rect: s => {
+    const [top, bottom] = y(s);
+    return { width: 360, left: s.right === '0' ? icon.left + 16 - 360 : icon.left, right: s.right === '0' ? icon.left + 16 : icon.left + 360, top, bottom };
+  } });
+  byId['q-' + n].onclick();
+  const s = byId['hint-' + n].style;
+  document._fire('click', {});
+  return ['left', 'right', 'top', 'bottom', 'transform'].filter(k => s[k]).map(k => `${k}=${s[k]}`).join(' ') || 'none';
+};
+const below = () => [322, 372];
+console.log(`an icon on the left half: left-aligned to it: ${tap('level', { left: 100, top: 300, bottom: 316 }, below)}`);
+console.log(`an icon on the right half: right-aligned to it: ${tap('dedup', { left: 900, top: 300, bottom: 316 }, below)}`);
+console.log(`nudged in to the 16px margin: left ${tap('T', { left: 4, top: 300, bottom: 316 }, below)}, right ${tap('C', { left: 990, top: 300, bottom: 316 }, below)}`);
+console.log(`an upward tooltip past the top opens downward: ${tap('step', { left: 100, top: 30, bottom: 46 }, s => s.top === '100%' ? [52, 240] : [-164, 24])}`);
+console.log(`a downward tooltip past the bottom opens upward: ${tap('t', { left: 100, top: 700, bottom: 716 }, s => s.bottom === '100%' ? [600, 694] : [722, 816])}`);
+console.log(`room for neither: downward: ${tap('g', { left: 100, top: 100, bottom: 116 }, s => s.bottom === '100%' ? [-500, 94] : [122, 900])}`);
+console.log(`the <=480px banner (position: fixed) is left as CSS puts it: ${tap('n', { left: 900, top: 700, bottom: 716 }, () => [700, 900], 'fixed')}`);
+byId['q-rank'].onclick();
+ctx.window.ls.resize.forEach(fn => fn());
+console.log(`a resize closes an open tooltip: rank ${byId['hg-rank'].classList.contains('open') ? 'open' : 'closed'}`);

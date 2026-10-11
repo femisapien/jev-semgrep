@@ -1798,9 +1798,18 @@ reopening clears the previous save message: sst=\"\", body scroll locked=true
 a backdrop click closes the dialog: open=false
 hints start closed: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
 tapping the rank \"?\" opens only it: step:false/closed edges:false/closed rank:true/open summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+the \"?\" it opened keeps focus: true
 Esc closes it and blurs the icon (no lingering :focus-visible): step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed, focus dropped=true
 tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
-a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
+a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+an icon on the left half: left-aligned to it: left=auto right=0 transform=translateX(344px)
+an icon on the right half: right-aligned to it: left=auto right=0
+nudged in to the 16px margin: left left=auto right=0 transform=translateX(356px), right left=auto right=0 transform=translateX(-22px)
+an upward tooltip past the top opens downward: left=auto right=0 top=100% bottom=auto transform=translateX(344px)
+a downward tooltip past the bottom opens upward: left=auto right=0 top=auto bottom=100% transform=translateX(344px)
+room for neither: downward: left=auto right=0 top=100% bottom=auto transform=translateX(344px)
+the <=480px banner (position: fixed) is left as CSS puts it: none
+a resize closes an open tooltip: rank closed" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 # #206: the settings test wrote under the temp HOME, never the real one; the entry points that can drive --serve refuse the real HOME
 [ "$HS" != "$REALHOME/.config/sys1grep/settings.json" ] || fail "--serve settings: the test wrote the real settings.json"

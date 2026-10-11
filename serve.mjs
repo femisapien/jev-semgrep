@@ -564,26 +564,38 @@ document.getElementById('save').onclick = () => {
 // never needs this list touched by hand.
 const HINTS = ['step', 'edges', 'rank', 'summarize', 'level', 't', 'T', 'C', 'autoscope', 'n', 'p', 'dedup', 'unit', 'include', 'exclude', 'changed', 'g'];
 const hintEls = HINTS.map(n => ({ n: n, b: document.getElementById('q-' + n), g: document.getElementById('hg-' + n) }));
-// CSS places each tooltip next to its icon (left-aligned by default, or right-aligned/upward for the four ids the
-// stylesheet singles out); at some widths the controls row wraps and the icon ends up close enough to an edge that
-// the CSS placement still overflows (r2 review: measured left -88px / right -10px at 481px wide). This nudges it
-// back in with a translateX, only when it would otherwise cross the 16px margin -- the common case never applies.
-// Runs for every id in HINTS, not just the original four, so a hg()-built hint in Details gets the same clamp.
+// CSS places each tooltip next to its icon (left-aligned by default, right-aligned for rank/summarize, upward for
+// multi-step/edges) until this measures it and moves it where it fits. Every layout read happens right-aligned to the icon: a tooltip laid
+// out across the right edge, even for one measurement, makes a mobile browser widen its viewport (#214 review: the
+// right column of Details cut off on a tap), and one across the left edge does not. From there a translateX puts it
+// beside the icon -- left-aligned on the left half of the page, right-aligned on the right half -- and inside the 16px
+// margin. An upward tooltip that would cross the top opens downward, a downward one past the bottom opens upward,
+// and downward when neither fits. clientWidth/clientHeight: the layout viewport, without a classic scrollbar.
+// Runs for every id in HINTS, so a hg()-built hint gets it too.
 const clampHint = n => {
-  const hint = document.getElementById('hint-' + n);
-  hint.style.transform = '';
-  const r = hint.getBoundingClientRect();
-  const dx = r.left < 16 ? 16 - r.left : r.right > window.innerWidth - 16 ? (window.innerWidth - 16) - r.right : 0;
-  if (dx) hint.style.transform = 'translateX(' + dx + 'px)';
+  const hint = document.getElementById('hint-' + n), s = hint.style, de = document.documentElement;
+  s.transform = s.top = s.bottom = s.marginTop = s.marginBottom = '';
+  s.left = 'auto'; s.right = '0';
+  if (getComputedStyle(hint).position === 'fixed') { s.left = s.right = ''; return; } // <=480px: the bottom banner
+  const W = de.clientWidth, H = de.clientHeight, ib = hint.parentElement.getBoundingClientRect(), r = hint.getBoundingClientRect();
+  if (!r.width) return; // not shown yet (display: none)
+  const x = Math.max(16, Math.min(ib.left + ib.right > W ? r.left : ib.left, W - 16 - r.width));
+  if (x !== r.left) s.transform = 'translateX(' + (x - r.left) + 'px)';
+  const down = () => { s.top = '100%'; s.bottom = 'auto'; s.marginTop = '6px'; s.marginBottom = '0'; };
+  if (r.bottom <= ib.top) { if (r.top < 0) down(); }
+  else if (r.bottom > H) { s.top = 'auto'; s.bottom = '100%'; s.marginTop = '0'; s.marginBottom = '6px'; if (hint.getBoundingClientRect().top < 0) down(); }
 };
 for (const { n, b } of hintEls) {
   b.parentElement.addEventListener('mouseenter', () => clampHint(n));
   b.addEventListener('focus', () => clampHint(n));
 }
-// b.blur(): Esc (and a tap elsewhere) must drop real keyboard focus too, or :focus-visible keeps a tap-opened
-// hint's tooltip visible after .open is gone (r2 review).
-const closeHints = () => { for (const { b, g } of hintEls) { b.setAttribute('aria-expanded', 'false'); g.classList.remove('open'); b.blur(); } };
-for (const { n, b, g } of hintEls) b.onclick = e => { e?.stopPropagation?.(); const was = g.classList.contains('open'); closeHints(); if (!was) { b.setAttribute('aria-expanded', 'true'); g.classList.add('open'); clampHint(n); } };
-document.addEventListener('click', closeHints);
+// blur(): Esc (and a tap elsewhere) must drop real keyboard focus too, or :focus-visible keeps a tap-opened hint's
+// tooltip visible after .open is gone (r2 review); except: the "?" being toggled keeps focus, so Enter/Space on it
+// leaves focus (and the screen reader) on the control whose aria-expanded just changed (#214 review).
+const closeHints = except => { for (const { b, g } of hintEls) { b.setAttribute('aria-expanded', 'false'); g.classList.remove('open'); if (b !== except) b.blur(); } };
+for (const { n, b, g } of hintEls) b.onclick = e => { e?.stopPropagation?.(); const was = g.classList.contains('open'); closeHints(b); if (!was) { b.setAttribute('aria-expanded', 'true'); g.classList.add('open'); clampHint(n); } };
+document.addEventListener('click', () => closeHints());
+// a resize moves the icons; a tooltip left open would keep the placement measured for the old width
+window.addEventListener('resize', () => closeHints());
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHints(); });
 </script></body></html>`;
