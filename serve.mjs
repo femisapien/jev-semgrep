@@ -4,9 +4,8 @@ import { createServer } from 'node:http';
 import { execFile, spawnSync } from 'node:child_process';
 import { parseArgs, parseEnv } from 'node:util';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { FIELDS, maskOpts, maskUrl, readSettings, writeSettings } from './settings.mjs';
 import { OPTIONS, REVERSE_REMOVED, fill, parseOpts } from './options.mjs';
 
@@ -248,17 +247,15 @@ export function serve(argv) {
   const summarizeAsked = init.summarize;
   const script = process.argv[1];
   // #222: a folder searched without -r fails every search ("Is a directory (use -r)"), so refuse it before listening.
-  // Whether -r is in effect (from the launch, SYS1GREP_OPTS or settings.json opts; git sys1grep and -g read no target
-  // files) is asked of sys1grep itself, on an empty folder, so a real one is never walked.
+  // Whether -r is in effect is asked of sys1grep itself (SYS1GREP_PROBE), so -r from SYS1GREP_OPTS or settings.json
+  // opts, a later --no-r, -g and git sys1grep all count as they do in a search.
   const dir = targets.list.find(t => statSync(t, { throwIfNoEntry: false })?.isDirectory());
   if (dir) {
-    // --no-rank / --no-summarize: a regex alone can do neither, and a run that died on that would let the folder through
-    const empty = mkdtempSync(join(tmpdir(), 'sys1grep-serve-'));
-    let stderr;
-    try { ({ stderr } = spawnSync(process.execPath, [script, ...launch, '-e', '/x/', '--dry-run', '--no-summarize', '--no-rank', '--', empty], { input: '', encoding: 'utf8', timeout: 10_000 })); }
-    finally { rmSync(empty, { recursive: true }); }
+    const { stdout } = spawnSync(process.execPath, [script, ...launch], { input: '', encoding: 'utf8', timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } });
+    let p;
+    try { p = JSON.parse(stdout); } catch { console.error('sys1grep: --serve: could not check whether -r is in effect'); }
     const sh = a => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
-    if (stderr?.includes('Is a directory (use -r)')) throw new Error(`--serve: ${dir} is a directory: add -r to search it (${process.env.npm_lifecycle_event === 'serve' ? 'npm run serve --' : 'sys1grep --serve'} -r ${sh(dir)})`);
+    if (p && !p.r && !p.g && !p.git) throw new Error(`--serve: ${dir} is a directory: add -r to search it (${process.env.npm_lifecycle_event === 'serve' ? 'npm run serve --' : 'sys1grep --serve'} -r ${dir.startsWith('-') ? '-- ' : ''}${sh(dir)})`);
   }
   const tpl = launch.some(a => a.startsWith('--template')) ? [] : ['--template=search'];
   const run = (args, signal) => new Promise(resolve => {
