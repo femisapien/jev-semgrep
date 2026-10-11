@@ -215,7 +215,13 @@ $J --dry-run -e /dog/ -a cat "$F" | tail -1 | grep -q ', 2 of 8 lines to send,' 
 # -j: requests in flight at once (each takes 30ms at the fake)
 reset; $J --chunk 1 -j 1 -e cat "$F" >/dev/null; eq "$(stat max)" "1" "-j 1"
 reset; $J --chunk 1 -j 3 -e cat "$F" >/dev/null; eq "$(stat max)" "3" "-j 3"
-reset; $J --chunk 1 -e cat "$F" >/dev/null; eq "$(stat max)" "7" "default -j 8, 7 requests"
+reset; $JN --chunk 1 -e cat "$F" >/dev/null; eq "$(stat max)" "7" "default -j 8, 7 requests"
+# #180 #181: a local URL defaults to -j 1; a -j given anywhere wins
+reset; $J --chunk 1 -e cat "$F" >/dev/null; eq "$(stat max)" "1" "a local URL defaults to -j 1"
+reset; $J --chunk 1 -j 3 -e cat "$F" >/dev/null; eq "$(stat max)" "3" "a local URL: -j 3 wins"
+reset; $E SYS1GREP_OPTS='-j 3' SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --chunk 1 -e cat "$F" >/dev/null; eq "$(stat max)" "3" "a local URL: SYS1GREP_OPTS -j 3 wins"
+$J --dry-run -e cat "$F" | grep -q -- '-j 1 (local URL)' || fail "--dry-run: -j 1 (local URL)"
+$JN --dry-run -e cat "$F" | grep -q -- '-j 8,' || fail "--dry-run: -j 8 on a non-local URL"
 code 2 "-j 0" -- $J -j 0 -e cat "$F"
 
 # -q / --quiet: prints nothing, stops at the first match, a match wins over an error
@@ -1341,7 +1347,7 @@ echo "$out" | grep -qF "sys1grep: endpoint $hostport/v1 (SYS1GREP_URL, ~/.config
 rm -rf "$tmp/.config"
 out=$($E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS='--level strict --color=never' node ../sys1grep.mjs --verbose -e cat "$F" 2>&1 >/dev/null)
 echo "$out" | grep -qx 'sys1grep: SYS1GREP_OPTS: --level strict --color=never' || fail "the raw SYS1GREP_OPTS line: $out"
-echo "$out" | grep -qx 'sys1grep: options: --level strict (SYS1GREP_OPTS) = -t 0.7 -T 0.3, --chunk 30, -j 8, scope on, -M 2000, --max-filesize 10M, --max-cost 1' || fail "options names --level's source: $out"
+echo "$out" | grep -qx 'sys1grep: options: --level strict (SYS1GREP_OPTS) = -t 0.7 -T 0.3, --chunk 30, -j 1 (local URL), scope on, -M 2000, --max-filesize 10M, --max-cost 1' || fail "options names --level's source: $out"
 out=$($E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS='--sys1-api-key=sekrit9 --level strict' node ../sys1grep.mjs --dry-run -e cat "$F")
 echo "$out" | grep -qxF 'sys1grep: SYS1GREP_OPTS: --sys1-api-key=*** --level strict' || fail "SYS1GREP_OPTS's own key value is masked (--sys1-api-key=VALUE): $out"
 [ "$(echo "$out" | grep -c sekrit9)" = 0 ] || fail "the key's value must never print (--sys1-api-key in SYS1GREP_OPTS): $out"
@@ -1351,9 +1357,9 @@ echo "$out" | grep -qxF 'sys1grep: SYS1GREP_OPTS: --sys1-api-key ***' || fail "S
 out=$($J --verbose -e cat "$F" 2>&1 >/dev/null)
 echo "$out" | grep -q '^sys1grep: SYS1GREP_OPTS:' && fail "no SYS1GREP_OPTS line when it is empty: $out"
 out=$($J --verbose -t 0.6 -e cat "$F" 2>&1 >/dev/null)
-echo "$out" | grep -qx 'sys1grep: options: -t 0.6, -T 0.5, --chunk 30, -j 8, scope on, -M 2000, --max-filesize 10M, --max-cost 1' || fail "-t alone overrides just one threshold: $out"
+echo "$out" | grep -qx 'sys1grep: options: -t 0.6, -T 0.5, --chunk 30, -j 1 (local URL), scope on, -M 2000, --max-filesize 10M, --max-cost 1' || fail "-t alone overrides just one threshold: $out"
 out=$($J --verbose --no-auto-scope -e cat "$F" 2>&1 >/dev/null)
-echo "$out" | grep -qx 'sys1grep: options: --level normal = -t 0.5 -T 0.5, --chunk 30, -j 8, scope off, -M 2000, --max-filesize 10M, --max-cost 1' || fail "scope off: $out"
+echo "$out" | grep -qx 'sys1grep: options: --level normal = -t 0.5 -T 0.5, --chunk 30, -j 1 (local URL), scope off, -M 2000, --max-filesize 10M, --max-cost 1' || fail "scope off: $out"
 out=$($E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS=--no-auto-scope node ../sys1grep.mjs --verbose -e cat "$F" 2>&1 >/dev/null)
 echo "$out" | grep -q 'scope off (SYS1GREP_OPTS)' || fail "scope off, its source: $out"
 out=$($S --verbose --summarize -e cat "$F" 2>&1 >/dev/null)
@@ -1398,7 +1404,7 @@ echo "$out" | grep -q '^sys1grep: summarize: ollama, model qwen3.5:9b' || fail "
 echo "$out" | grep -q '^sys1grep: summarize: POST ' || fail "-i shows the POST line: $out"
 # #58's limits in #90's options line, with their sources like the others; -M's default follows -z
 out=$($J --dry-run -M 3000 --max-filesize 5M --max-cost 0.5 -y -e cat "$F")
-echo "$out" | grep -qx 'sys1grep: options: --level normal = -t 0.5 -T 0.5, --chunk 30, -j 8, scope on, -M 3000, --max-filesize 5M, --max-cost 0.5, -y' || fail "options: #58's limits from the command line: $out"
+echo "$out" | grep -qx 'sys1grep: options: --level normal = -t 0.5 -T 0.5, --chunk 30, -j 1 (local URL), scope on, -M 3000, --max-filesize 5M, --max-cost 0.5, -y' || fail "options: #58's limits from the command line: $out"
 out=$($E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS='-M 3000 --max-filesize 5M --max-cost 2 -y' node ../sys1grep.mjs --dry-run -e cat "$F")
 echo "$out" | grep -qF -- '-M 3000 (SYS1GREP_OPTS), --max-filesize 5M (SYS1GREP_OPTS), --max-cost 2 (SYS1GREP_OPTS), -y (SYS1GREP_OPTS)' || fail "options: #58's limits from SYS1GREP_OPTS: $out"
 $J --dry-run -z -e cat "$F" | grep -q '^sys1grep: options: .*, -M 8000, ' || fail "options: -M's default with -z"
@@ -1426,7 +1432,7 @@ reset
 # the <tree>: / index copy, -i's preview shows both, and --summarize pipes the <tree>: prefixes
 GSM="$PWD/../git-sys1grep.mjs"
 out=$(cd "$tmp/g50" && $GS --dry-run -e cat v1 v2 -- base.txt)
-echo "$out" | grep -qx 'sys1grep: options: --level normal = -t 0.5 -T 0.5, --chunk 30, -j 8, scope on, -M 2000, --max-filesize 10M, --max-cost 1, <tree> v1 v2' || fail "#50/#90: options name the <tree>s: $out"
+echo "$out" | grep -qx 'sys1grep: options: --level normal = -t 0.5 -T 0.5, --chunk 30, -j 1 (local URL), scope on, -M 2000, --max-filesize 10M, --max-cost 1, <tree> v1 v2' || fail "#50/#90: options name the <tree>s: $out"
 echo "$out" | grep -qx 'sys1grep: file v2:base.txt: 1 lines, 1 to send' || fail "#50/#90: a file line names its <tree>: $out"
 out=$(cd "$tmp/g50" && $GS --dry-run --cached -e cat -- base.txt)
 echo "$out" | grep -q '^sys1grep: options: .*, scope on, .*--cached$' || fail "#50/#90: options name --cached: $out"

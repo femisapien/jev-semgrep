@@ -312,11 +312,12 @@ about nothing on a local URL.
 
 **Local decision models.** A model that serves the same `POST /v1/systemone` can be used instead of Jev, with no key and no
 network, but both tried so far are less accurate than Jev: raise `-t`, tune with `npm run judge`, and expect more false
-positives. Both also run one request at a time, so use `-j 1`.
+positives. Both also run one request at a time, so a local URL (`localhost`, `127.0.0.1`, `[::1]`) defaults to `-j 1`;
+a `-j` you give (on the command line, in `SYS1GREP_OPTS` or settings.json) still wins.
 
 - [Jeff](https://github.com/firelex/jeff) (`jeff-serve`, 0.8B, base v1.2, zero-shot, MLX): works with
   `--sys1-url=http://127.0.0.1:8765/v1/systemone --sys1-model=jeff-latest`. It answers a second request at once with
-  `529 "The model is busy"`, and the default `-j 8` runs out of retries. On `npm run judge` (51 lines, 10 cases, `-j 1`)
+  `529 "The model is busy"`, and `-j 8` runs out of retries. On `npm run judge` (51 lines, 10 cases, `-j 1`)
   precision 0.68, recall 0.61, F1 0.64 at the default thresholds and F1 0.77 at `-t 0.75 -T 0.85`, against F1 0.96 for Jev
   (a run of another day): not a drop-in. v1.2 is a community preview; adapters do not carry across versions.
 - [strands-decider](https://github.com/strands-labs/strands-decider) (`strands-decider serve`, 2B, an M4 with `mps`):
@@ -1091,7 +1092,7 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... 
                with 3 or more meanings)
                Lines in one request are each other's context, so a small chunk changes verdicts
                on ambiguous lines, not just speed
-  -j N         concurrent requests (default 8)
+  -j N         concurrent requests (default 8; 1 for a local URL: localhost, 127.0.0.1, [::1])
   -n           print line numbers
   --unit=UNIT  the unit of judgement: line (default), zero, sentence-by-jev, sentence-by-rule or function
   -z, --null-data  --unit=zero: judge NUL-terminated records instead of lines, and print them NUL-terminated (see "Records that span several lines" above);

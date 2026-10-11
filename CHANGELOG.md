@@ -210,6 +210,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   tokens); any other model at Jev's 0.042. For another URL the price says whose it is (`at TypeSafe's list price`,
   `at clef's list price`, `(local URL, free)`). Before, a custom URL was priced at Jev's list price whatever it was
   (the owner's decision of 2026-09-27, replaced on 2026-10-04). An endpoint that reports `usage.cost` still shows that.
+- `-j` defaults to 1 for a local URL (the same hosts as the price above), since the local decision models tried so
+  far serve one request at a time: Jeff answers a second with `529`, strands-decider crashes (#180, #181). A `-j` given on
+  the command line, in `SYS1GREP_OPTS` or in settings.json still wins; `--verbose` shows `-j 1 (local URL)`.
 - `--dedup` takes `auto`, `always` or `never` (#143); a bare `--dedup` is `--dedup=always`, unchanged from
   before. **Default is `never` for now**, kept off until real-run stats say `auto` should be the default; a
   run that would have paid to fold prints one stderr hint naming `--dedup=auto` (not with `-q`, gated like the
