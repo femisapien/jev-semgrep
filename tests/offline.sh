@@ -1673,13 +1673,14 @@ rm -f "$HS"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=jev&dedup=always" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: --step-to drops rank and dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve2.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (launch options) did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve2.url"); BASE=${U%%\?*} K=${U#*k=}
 eq "$(curl -s "$U" | grep -c SECRETKEY123 || true)" "0" "--serve: the key is not in the page"
 eq "$(curl -s -H "x-sys1grep-token: $K" "${BASE}settings" | field 'j.key')" '[false,"cmd"]' "--serve settings: a launch --sys1-api-key wins, by source only"
 eq "$(curl -s "$U" | grep -c -- '--summarize-prompt' || true)" "1" "--serve: the launch summary instruction is a control's value"
+eq "$(curl -s "$U" | grep -c 'SUGGEST = \[{"h":"why is it slow","x":\["Q:why is it slow"\],"q":"Q"},{"h":"disk full","x":\["e:disk full"\],"q":"e"},{"h":"plain","x":\["Q:plain"\],"q":"Q"}\]')" "1" "--serve: --suggest, both forms, a bare text is a question"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
@@ -1725,6 +1726,19 @@ hint-step: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-edges: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-rank: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hint-summarize: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-level: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-t: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-T: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-C: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-autoscope: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-n: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-p: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-dedup: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-unit: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-include: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-exclude: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-changed: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
+hint-g: role=tooltip ok, linked by aria-describedby ok, aria-controls ok
 hints hidden by default (source): ok
 hover reveal is scoped to the icon, not the whole row: ok
 a shown hint never blocks clicks (pointer-events: none): ok
@@ -1732,6 +1746,7 @@ keyboard-focus of the icon and tap both reveal: ok
 no stray rule overrides a hint's display beyond those three: ok
 hint-step explains the walk: starts-with-Finds=true lines=4
 first start row: 3 children (select, input, delete)
+the first start field is a question (-Q) by default: ok
 steps hidden: -e '/def main/'
 x=e:/def main/ hops=0.. reverse=0 -> 1 lines
 off, start+: steps hidden: -e '/def main/' -a /helper/
@@ -1775,11 +1790,11 @@ saved; the next search uses it: url \"\" SYS1GREP_URL in the environment wins ov
 the x closes the dialog and returns focus to the gear: open=false, focused=true, body scroll restored=true
 reopening clears the previous save message: sst=\"\", body scroll locked=true
 a backdrop click closes the dialog: open=false
-hints start closed: step:false/closed edges:false/closed rank:false/closed summarize:false/closed
-tapping the rank \"?\" opens only it: step:false/closed edges:false/closed rank:true/open summarize:false/closed
-Esc closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed
-tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed
-a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
+hints start closed: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+tapping the rank \"?\" opens only it: step:false/closed edges:false/closed rank:true/open summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+Esc closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+tapping a second \"?\" closes the first: step:false/closed edges:true/open rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed
+a tap elsewhere closes it: step:false/closed edges:false/closed rank:false/closed summarize:false/closed level:false/closed t:false/closed T:false/closed C:false/closed autoscope:false/closed n:false/closed p:false/closed dedup:false/closed unit:false/closed include:false/closed exclude:false/closed changed:false/closed g:false/closed" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 # #206: the settings test wrote under the temp HOME, never the real one; the entry points that can drive --serve refuse the real HOME
 [ "$HS" != "$REALHOME/.config/sys1grep/settings.json" ] || fail "--serve settings: the test wrote the real settings.json"
@@ -1802,6 +1817,7 @@ case $U in http://127.0.0.1:$PORT/*) ;; *) fail "--serve --serve=PORT: the port:
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
 cat dog" "--serve --serve=PORT: searches still run"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+code 2 "--serve: --suggest without a value" -- $J --serve "$F" --suggest
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"
