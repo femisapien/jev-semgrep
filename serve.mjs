@@ -252,10 +252,13 @@ export function serve(argv) {
   // files) is asked of sys1grep itself, on an empty folder, so a real one is never walked.
   const dir = targets.list.find(t => statSync(t, { throwIfNoEntry: false })?.isDirectory());
   if (dir) {
+    // --no-rank / --no-summarize: a regex alone can do neither, and a run that died on that would let the folder through
     const empty = mkdtempSync(join(tmpdir(), 'sys1grep-serve-'));
-    const { stderr } = spawnSync(process.execPath, [script, ...launch, '-e', '/x/', '--dry-run', '--no-summarize', '--', empty], { input: '', encoding: 'utf8' });
-    rmSync(empty, { recursive: true });
-    if (stderr.includes('Is a directory (use -r)')) throw new Error(`--serve: ${dir} is a directory: add -r to search it (${process.env.npm_lifecycle_event === 'serve' ? 'npm run serve --' : 'sys1grep --serve'} -r ${dir})`);
+    let stderr;
+    try { ({ stderr } = spawnSync(process.execPath, [script, ...launch, '-e', '/x/', '--dry-run', '--no-summarize', '--no-rank', '--', empty], { input: '', encoding: 'utf8', timeout: 10_000 })); }
+    finally { rmSync(empty, { recursive: true }); }
+    const sh = a => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
+    if (stderr?.includes('Is a directory (use -r)')) throw new Error(`--serve: ${dir} is a directory: add -r to search it (${process.env.npm_lifecycle_event === 'serve' ? 'npm run serve --' : 'sys1grep --serve'} -r ${sh(dir)})`);
   }
   const tpl = launch.some(a => a.startsWith('--template')) ? [] : ['--template=search'];
   const run = (args, signal) => new Promise(resolve => {
