@@ -1911,5 +1911,16 @@ code 2 "--serve refuses --step-reverse-to at launch" -- limit $J --serve --step-
 for o in --reverse --no-reverse; do
   eq "$(limit $J --serve $o "$F" 2>&1 | head -1)" "sys1grep: --reverse was replaced by --step-reverse-to" "--serve $o: says what replaced it, at launch"
 done
+# #222: a folder without -r is refused at launch (every search would fail "Is a directory"); -r, -g and a file start
+mkdir -p "$tmp/sd" && cp "$F" "$tmp/sd/"
+eq "$(limit $J --serve "$tmp/sd" 2>&1 | head -1)" "sys1grep: --serve: $tmp/sd is a directory: add -r to search it (sys1grep --serve -r $tmp/sd)" "--serve DIR without -r: refused at launch"
+code 2 "--serve -- DIR without -r" -- limit $J --serve -- "$tmp/sd"
+eq "$(limit $J --serve "$tmp/sd" 2>/dev/null | wc -l | tr -d ' ')" "0" "--serve DIR without -r: no URL, nothing listening"
+for launch in -r -g; do
+  $J --serve $launch "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null &
+  serve=$!
+  i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve $launch DIR did not start"; sleep 0.05; done
+  kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve6.url"
+done
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"
 echo "OK: $n checks passed (and the grep-guarded ones)"
