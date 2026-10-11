@@ -6,6 +6,7 @@ import { refuseRealHome } from './home-guard.mjs';
 refuseRealHome('serve-page.mjs'); // its Save button writes the settings of the --serve it is pointed at
 
 const U = process.argv[2], html = await (await fetch(U)).text();
+const TARGETS = [...(/id="tg-files"(.*?)id="tg-git"/.exec(html)?.[1] ?? '').matchAll(/<code>([^<]*)<\/code>/g)].map(m => m[1]);
 const HINTS = [...html.matchAll(/id="hg-([\w-]+)"/g)].map(m => m[1]); // every "?" hint of the page
 const text = el => (el.children.length ? el.children.map(text).join('') : String(el.text));
 class El {
@@ -68,15 +69,19 @@ const byId = {}, elements = {};
   }
 }
 byId.f.elements = byId.sf.elements = elements;
-// reading order, from the real tree where the static markup gives us one: the card holds the title, then the form,
-// then Settings; the form holds the start group, the multi-step toggle, the end group, the run controls, the
-// command line, the results, the examples, then Details.
+// reading order, from the real tree where the static markup gives us one: the card holds the title, the form, the
+// results, then Settings; the form holds the four sections (#216): Target, Search conditions (the start group, the
+// multi-step toggle, the end group, the examples), Options (the run controls, the command line), then Details.
 {
   const seq = els => els.map(e => { const id = /\sid="([^"]+)"/.exec(e.attrs)?.[1], cls = /\sclass="([^"]+)"/.exec(e.attrs)?.[1]; return id ? '#' + id : cls ? '.' + cls.split(' ')[0] : e.tagName; });
   console.log(`card children: ${seq(byId.card.children).join(' ')}`);
   console.log(`form children: ${seq(byId.f.children).join(' ')}`);
+  console.log(`sections: ${[...html.matchAll(/<h2 class="sech"[^>]*>([^<]*)</g)].map(m => m[1]).join(' | ')}; Details ${byId.d.tagName === 'details' ? 'stays the fold' : 'FAIL'}`);
+  console.log(`search conditions: ${seq(byId['sec-cond'].children).join(' ')}`);
+  console.log(`options: ${seq(byId['sec-opts'].children).join(' ')}`);
   console.log(`start group: ${byId.startgrp.tagName} > ${seq(byId.startgrp.children).join(' ')}`);
   console.log(`end group: ${byId.steps.tagName} > ${seq(byId.steps.children).join(' ')}`);
+  console.log(`target: ${TARGETS.join(' | ')}`);
   console.log(`no <header>: ${/<header[\s>]/.test(html) ? 'FAIL, still present' : 'ok'}`);
   console.log(`no logo in the toolbar: ${html.includes('class="logo"') ? 'FAIL, still present' : 'ok'}`);
   console.log(`--hops is type=text (styled like the other inputs): ${elements.hops.type === 'text' ? 'ok' : 'FAIL'}`);
@@ -171,6 +176,15 @@ byId.fields.children[0].children[1].value = '/def main/';
 fire();
 console.log(state());
 console.log(await search());
+// #216: -g reads git log, not the targets: Target says so while it is on, and goes back when it is off
+const tg = () => `files ${byId['tg-files'].hidden ? 'hidden' : 'shown'}, git log ${byId['tg-git'].hidden ? 'hidden' : 'shown'}`;
+console.log(`target: ${tg()}`);
+elements.g.checked = true;
+fire();
+console.log(`-g on, target: ${tg()}`);
+elements.g.checked = false;
+fire();
+console.log(`-g off, target: ${tg()}`);
 // off: the start "+" (distinct from the end "+", and not toggle-gated) adds a second start; both reach the command
 document.getElementById('add').onclick();
 byId.fields.children[1].children[1].value = '/helper/';
@@ -317,3 +331,5 @@ console.log(`the <=480px banner (position: fixed) is left as CSS puts it: ${tap(
 byId['q-rank'].onclick();
 ctx.window.ls.resize.forEach(fn => fn());
 console.log(`a resize closes an open tooltip: rank ${byId['hg-rank'].classList.contains('open') ? 'open' : 'closed'}`);
+// #216: the targets are the launch's; nothing the page sent named one
+console.log(`no request carried a target: ${TARGETS.length && sent.length && sent.every(q => ![...q.values()].some(v => TARGETS.some(t => v.includes(t)))) ? 'ok' : 'FAIL'}`);

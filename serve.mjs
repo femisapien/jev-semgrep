@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { FIELDS, maskOpts, maskUrl, readSettings, writeSettings } from './settings.mjs';
-import { fill, parseOpts, REVERSE_REMOVED } from './options.mjs';
+import { OPTIONS, REVERSE_REMOVED, fill, parseOpts } from './options.mjs';
 
 // The settings panel's view of ~/.config/sys1grep/settings.json, one tuple per field: [the saved value (for a key, only
 // whether one is saved; for url and opts, with a --sys1-api-key or a url's userinfo masked, the same way --verbose
@@ -40,7 +40,7 @@ const REFUSED_LAUNCH = /^(-[eavQlcqoziHV]|-[eavQ].+|--(question|step-to|step-rev
 // (or a --serve started with no target, which then defaults to ".") in check. sys1-url/sys1-api-key: their own
 // fields.
 const DENY = new Set(['l', 'c', 'quiet', 'o', 'z', 'interactive', 'with-filename', 'version', 'format', 'color',
-  'verbose', 'dry-run', 'help', 'r', 'sys1-url', 'sys1-api-key']);
+  'verbose', 'dry-run', 'help', 'r', 'gitlog', 'sys1-url', 'sys1-api-key']);
 const optsError = opts => {
   let tokens;
   try { ({ tokens } = parseOpts(opts.map(a => fill(a, 'x')))); }
@@ -49,6 +49,7 @@ const optsError = opts => {
   if (!bad) return null;
   const tok = opts[bad.index]; // the original, unfilled element: a cluster like "-nr" stays "-nr", not just "-r"
   const why = bad.name === 'r' ? "it would widen the search past the launch's own targets"
+    : bad.name === 'gitlog' ? "it would switch the search from the launch's targets to git log; Details has -g"
     : bad.name === 'sys1-url' || bad.name === 'sys1-api-key' ? 'use the url / key field instead'
     : 'meanings, targets and output shape go on the command line';
   return `${tok} is not allowed (${why})`;
@@ -214,6 +215,17 @@ const fromQuery = (sp, init) => { // null when a value is out of range
   return p.x.length ? p : { ...p, x: init.x };
 };
 
+// What every search reads (#216), shown on the page and never taken from it: the launch's own targets, or with none
+// what sys1grep falls back to. none: that fallback, in words. cwd: what a relative target is relative to. -g (at
+// launch or from Details) reads git log instead; the page shows that in place of these as -g goes on and off.
+const targetsOf = (launch, after) => {
+  const { values: o, positionals } = parseArgs({ args: launch.map(a => fill(a, 'x')), options: OPTIONS, strict: false, allowPositionals: true, allowNegative: true });
+  const list = [...positionals, ...after.slice(1)], cwd = process.cwd();
+  if (list.length) return { list, cwd };
+  return { list, cwd, none: globalThis.SYS1GREP_GIT ? 'every file git tracks (git sys1grep)'
+    : o.r ? '. (this folder, recursively: -r)' : 'stdin, which --serve leaves empty: start it with a file or folder to search' };
+};
+
 export function serve(argv) {
   const isServe = a => /^--serve(=|$)/.test(a), port = argv.filter(isServe).at(-1).slice(8); // the last one's port: npm run serve adds a bare --serve
   if (port && !(/^\d+$/.test(port) && Number(port) < 65536)) throw new Error(`--serve=${port}: not a port number`);
@@ -224,7 +236,7 @@ export function serve(argv) {
   if (launch.some(a => /^--(no-)?reverse(=|$)/.test(a))) throw new Error(REVERSE_REMOVED);
   const bad = launch.find(a => REFUSED_LAUNCH.test(a));
   if (bad) throw new Error(`--serve: ${bad.split('=')[0]} is not for --serve (the page sets the meaning and shows the results as html)`);
-  const init = { ...initOf(launch), 'summarize-prompt': prompt ?? '' };
+  const init = { ...initOf(launch), 'summarize-prompt': prompt ?? '' }, targets = targetsOf(launch, after);
   const secret = key === undefined ? [] : [`--sys1-api-key=${key}`];
   const cli = { url: lift(launch, 'sys1-url')[1], model: lift(launch, 'sys1-model')[1], key };
   const token = randomBytes(16).toString('hex');
@@ -266,7 +278,7 @@ export function serve(argv) {
     // server answers nothing, not even the page, so another local account or process cannot read the page (and the
     // token it carries, and anything a search of these targets would show) merely by knowing the port.
     if (url.searchParams.get('k') !== token && req.headers['x-sys1grep-token'] !== token) return send(404, 'text/plain', 'not found');
-    if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token, suggest: suggestOf(suggested) }));
+    if (url.pathname === '/') return send(200, 'text/html', page({ init, launch, after, token, targets, suggest: suggestOf(suggested) }));
     // The settings panel. It changes a file, so beyond the token above: for a write, POST with a JSON body and this
     // request's own Host as Origin (a page on another site cannot forge that, and GET never sends Origin at all, so
     // only POST is checked). A key goes in, never out.
@@ -299,9 +311,17 @@ export function serve(argv) {
 }
 
 const json = x => JSON.stringify(x).replace(/</g, '\\u003c');
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+// The Target section: one target a line, the first SHOWN of them, then a "+N more" fold with the rest; or, while -g is
+// on, git log in their place (show() swaps the two).
+const SHOWN = 5;
+const codes = list => list.map(t => `<li><code>${esc(t)}</code></li>`).join('');
+const targetList = ({ list, cwd, none }, g) => `<div id="targets" title="${esc(`relative to ${cwd}`)}"><ul class="targets" id="tg-files"${g ? ' hidden' : ''}>${none ? `<li class="note">${esc(none)}</li>`
+  : codes(list.slice(0, SHOWN)) + (list.length > SHOWN ? `<li><details class="more"><summary>+${list.length - SHOWN} more</summary><ul class="targets">${codes(list.slice(SHOWN))}</ul></details></li>` : '')}</ul>`
+  + `<p class="note" id="tg-git"${g ? '' : ' hidden'}>git log's commits (-g)</p></div>`;
 // a labelled control with its "?" hint (the same markup as rank's): the label, then the icon and its tooltip
 const hg = (name, label, text) => `<div class="withhint hintgroup" id="hg-${name}">${label.replace(/<(select|input)/, `<$1 aria-describedby="hint-${name}"`)}<span class="hintctl"><button type="button" class="qbtn" id="q-${name}" aria-expanded="false" aria-controls="hint-${name}" aria-label="more about ${label.replace(/<select.*?<\/select>/, '').replace(/<[^>]+>/g, '').trim()}">?</button><small class="hint" id="hint-${name}" role="tooltip">${text}</small></span></div>`;
-const page = ({ init, launch, after, token, suggest }) => `<!doctype html>
+const page = ({ init, launch, after, token, targets, suggest }) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>sys1grep</title>
 <style>
@@ -324,6 +344,11 @@ button, select { background: var(--bg); border: 1px solid var(--border); border-
 #est, #stop, #copy, #save { background: var(--input-bg); }
 fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px 12px; margin: 10px 0; min-width: 0; }
 .group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0 4px; }
+.sec { margin: 0; padding: 12px 0; } .sec + .sec { border-top: 1px solid var(--rule); }
+.sech { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+.targets { list-style: none; margin: 0; padding: 0; } #tg-git { margin: 0; }
+details.more { margin: 0; background: none; } details.more > summary { padding: 0; color: var(--muted); }
+main:has(#left:empty):not(.two) { display: none; } .targets code { font: 13px/1.6 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
 .row.edges { border-top: 1px solid var(--rule); margin-top: 10px; padding-top: 10px; }
 .del { border: none; background: none; color: var(--muted); padding: 4px; border-radius: 8px; display: inline-flex; }
 .del:hover { background: var(--input-bg); color: var(--fg); }
@@ -361,6 +386,9 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <div class="card" id="card">
 <div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
 <form id="f" autocomplete="off" onsubmit="return false">
+<section class="sec" id="sec-target" aria-labelledby="h-target"><h2 class="sech" id="h-target" title="ターゲット / 検索対象: what every search reads, set when --serve starts; the page cannot change it">Target</h2>
+${targetList(targets, init.g)}</section>
+<section class="sec" id="sec-cond" aria-labelledby="h-cond"><h2 class="sech" id="h-cond" title="検索条件">Search conditions</h2>
 <fieldset class="group" id="startgrp"><legend class="glabel" title="what to search for; with multi-step on, the start of the walk">start</legend><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></fieldset>
 <div class="row"><div class="withhint hintgroup" id="hg-step"><label><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><span class="hintctl"><button type="button" class="qbtn" id="q-step" aria-expanded="false" aria-controls="hint-step" aria-label="more about multi-step">?</button><small class="hint" id="hint-step" role="tooltip">Finds the start functions, then walks calls from them to the functions that match the end.
 A call is found by name: \`name(\` in a function's body (comments and strings left out) links to every function called \`name\`. Same-named functions all link; calls not written as \`name(\` (a function passed as a value, a call through a variable) are missed.
@@ -368,6 +396,9 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 --hops limits how many calls away an end may be. For exact relations, start --serve with --edges=FILE.</small></span></div></div>
 <fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
 <div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; reverse (--step-reverse-to) searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> reverse</label></div></fieldset>
+<div class="row" id="ex"><span class="note label">examples</span></div>
+</section>
+<section class="sec" id="sec-opts" aria-labelledby="h-opts"><h2 class="sech" id="h-opts" title="オプション">Options</h2>
 <div class="row">
 <button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" title="stop the search that is running (its process is killed)" disabled>Stop</button>
 <div class="withhint hintgroup" id="hg-rank"><label>rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
@@ -375,9 +406,8 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
 <div class="row"><pre id="cmd" title="the command line for the fields and controls as they are now; pasted in a terminal it runs the same search. The API key is never in it"></pre><button type="button" id="copy" title="copy the command line to the clipboard">Copy</button></div>
-<main id="m"><div id="left" title="results"></div><div id="right" title="the summary of the results" hidden></div></main>
-<div class="row" id="ex"><span class="note label">examples</span></div>
-<details id="d"><summary id="ds" title="the other options; a dot means one differs from its launch value">Details</summary><div class="grid">
+</section>
+<details id="d"><summary id="ds" title="詳細: the other options; a dot means one differs from its launch value">Details</summary><div class="grid">
 ${hg('level', '<label>level <select name="level"><option>loose</option><option>normal</option><option>strict</option></select></label>', 'how strict a match must be (--level): loose takes more lines, strict fewer')}
 ${hg('t', '<label>-t <input name="t" size="5" inputmode="decimal"></label>', '-t: a line matches when its probability is at least this (0 to 1)')}${hg('T', '<label>-T <input name="T" size="5" inputmode="decimal"></label>', '-T: a negated meaning holds when the probability is below this (0 to 1)')}
 ${hg('C', '<label>context lines (-C) <input name="C" size="3" inputmode="numeric"></label>', '-C: lines of context before and after each match')}
@@ -388,6 +418,7 @@ ${hg('unit', '<label>unit <select name="unit"><option>line</option><option>sente
 ${hg('include', '<label>--include <input name="include"></label>', '--include: only file names matching these globs, space separated. Applies to -r and git sys1grep; it narrows the launch targets, never widens them')}${hg('exclude', '<label>--exclude <input name="exclude"></label>', '--exclude: not file names matching these globs, space separated. Applies to -r and git sys1grep')}
 ${hg('changed', '<label>--changed-within <input name="changed-within" placeholder="2h, 7d, a date"></label>', '--changed-within: only files modified within 30m, 2h, 7d, 2w, or since a date. Applies to -r and git sys1grep')}${hg('g', '<label class="chk"><input type="checkbox" name="g"> -g git log</label>', '-g: search git log\'s commits, one record each')}
 </div></details></form>
+<main id="m"><div id="left" title="results"></div><div id="right" title="the summary of the results" hidden></div></main>
 <dialog id="sd" aria-labelledby="sdh"><div class="dlgbody"><div class="dlghead"><h2 id="sdh">Settings</h2><button type="button" class="dlgx" id="sdx" aria-label="Close" title="Close">&times;</button></div><form id="sf" autocomplete="off" onsubmit="return false"><div class="grid">
 <label>url <input name="set-url" placeholder="https://api.typesafe.ai/v1/systemone" autofocus><small class="note" id="src-url"></small></label>
 <label>model <input name="set-model" placeholder="jev-latest"><small class="note" id="src-model"></small></label>
@@ -444,6 +475,9 @@ const show = () => {
     [...box.children].forEach((r, i) => { const d = r.children[2]; if (d) d.title = d.ariaLabel = 'remove ' + label + ' condition ' + (i + 1); });
   }
   steps.hidden = !multi;
+  const g = p.g && !multi; // -g does not apply to a walk
+  document.getElementById('tg-files').hidden = g;
+  document.getElementById('tg-git').hidden = !g;
   f.elements.rank.disabled = f.elements.summarize.disabled = multi;
   f.elements['summarize-prompt'].style.display = p.summarize && !multi ? '' : 'none';
   cmd.textContent = ['sys1grep', ...LAUNCH.map(t => quote(t)), ...shown(toArgv(p, INIT)), ...AFTER.map(t => quote(t))].join(' ');
