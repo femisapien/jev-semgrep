@@ -266,6 +266,24 @@ for (const b of pills) {
   console.log(`${b.textContent}: ${c} -> ${byId.left.children.some(e => e.className === 'err') ? 'error ' + text(byId.left) : 'ok'}`);
 }
 
+// #215: EN / 日本語 redraws the examples' labels and fields (the multi-step ones keep their regexes), sends nothing, and
+// with no storage at all (none here) starts in English and still switches
+const exState = () => {
+  const bs = byId.ex.children.filter(b => b.tagName === 'button');
+  const grp = byId.ex.children.find(b => b.className === 'note grp');
+  return `${byId['ex-ja'].getAttribute('aria-pressed') === 'true' ? 'ja' : 'en'}: ${bs.length} buttons, "${bs[0].textContent}" (lang ${bs[0].lang ?? 'none'}) .. "${bs.at(-1).textContent}" (lang ${bs.at(-1).lang}), heading "${grp.textContent}" (lang ${grp.lang})`;
+};
+const n1 = sent.length;
+console.log(`examples ${exState()}`);
+byId['ex-ja'].onclick();
+console.log(`examples ${exState()}`);
+for (const h of ['言葉ではなく意味で', '-v で除外', '呼び出し元は誰か (--step-reverse-to)']) {
+  byId.ex.children.find(b => b.textContent === h).onclick();
+  console.log(`${h}: ${state()}`);
+}
+byId['ex-en'].onclick();
+console.log(`examples ${exState()}; ${sent.length - n1} sent`);
+
 // x on the sole remaining start row clears it instead of removing it: the start group always keeps a row to fill
 console.log(`before delete: ${byId.fields.children.length} start row(s)`);
 byId.fields.children[0].children[2].onclick();

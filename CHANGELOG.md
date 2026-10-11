@@ -6,6 +6,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--serve`: `EN` / `日本語` beside the examples switches their labels and meanings between English and Japanese (#215);
+  the multi-step ones keep their regexes, `--suggest`'s pills stay as given, and the choice is remembered in the browser
+  (English when storage is blocked).
 - `--serve`: the page is laid out as four sections, Target, Search conditions, Options and Details (#216). Target shows
   the launch's targets (or `.` with `-r`, or stdin, which `--serve` leaves empty, when none were given), read-only: the
   page cannot change them. Results stay below the sections; the examples are under Search conditions.
