@@ -1736,7 +1736,7 @@ kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
 # An empty end is refused before sending; pressing examples sends nothing, and each puts the page in its own state
 # (a plain example turns multi-step off and resets reverse), and its search runs without an error.
 printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py"
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --suggest=e:disk\ full "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
 eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #f #m #sd
@@ -1811,10 +1811,11 @@ on true, 2 ends, steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sy
 on true, 1 ends, steps shown: -e '/^ *def helper/' --step-reverse-to -e '/^ *def main/'
 x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. reverse=1 -> 2 lines
 empty end: Enter an end (--step-to)., 0 sent
-groups: [] b b b b b b b b [multi-step] b b b b
+groups: [] b b b b b b b b b [multi-step] b b b b
 pressing every example sends 0
 on false, steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n
 x=e:network or remote connection failure|v:a retry is happening or was attempted hops=0.. reverse=0 -> 1 lines
+disk full: steps hidden: -e 'disk full' -> ok
 meaning, not words: steps hidden: -e 'customer is angry or frustrated' -n -> ok
 a question (-Q): steps hidden: -Q 'whether the server is down' -n -> ok
 either meaning, with scores (-p): steps hidden: -e 'customer is asking for a refund' -e 'delivery address change request' -n -p -> ok
@@ -1827,12 +1828,12 @@ calls that raise: steps shown: -e '/^ *def main/' --step-to -e '/raise /' -> ok
 1 to 2 calls away: steps shown: -e '/^ *def main/' --step-to -e '/raise /' --hops=1..2 -> ok
 who calls it (--step-reverse-to): steps shown: -e '/^ *def helper/' --step-reverse-to -e '/^ *def main/' -> ok
 raise or exit (two ends): steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/' -> ok
-examples en: 12 buttons, \"meaning, not words\" .. \"raise or exit (two ends)\", heading \"multi-step\"
-examples ja: 12 buttons, \"言葉ではなく意味で\" .. \"raise または exit（終点が2つ）\", heading \"多段階\"
+examples en: 13 buttons, \"disk full\" (lang none) .. \"raise or exit (two ends)\" (lang en), heading \"multi-step\" (lang en)
+examples ja: 13 buttons, \"disk full\" (lang none) .. \"raise または exit（終点が2つ）\" (lang ja), heading \"多段階\" (lang ja)
 言葉ではなく意味で: steps hidden: -e '顧客が怒っている、または不満を持っている' -n
 -v で除外: steps hidden: -e 'ネットワークまたはリモート接続の失敗' -v 'リトライが行われた、または試みられた' -n
 呼び出し元は誰か (--step-reverse-to): steps shown: -e '/^ *def helper/' --step-reverse-to -e '/^ *def main/'
-examples en: 12 buttons, \"meaning, not words\" .. \"raise or exit (two ends)\", heading \"multi-step\"; 0 sent
+examples en: 13 buttons, \"disk full\" (lang none) .. \"raise or exit (two ends)\" (lang en), heading \"multi-step\" (lang en); 0 sent
 before delete: 1 start row(s)
 after delete: 1 start row(s), value \"\"
 gear opens the dialog: open=true, url \"\" SYS1GREP_URL in the environment wins over this; model \"\" not set: the default; key \"\" not saved, not set: the default; opts \"\"

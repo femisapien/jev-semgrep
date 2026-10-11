@@ -557,8 +557,10 @@ const drawEx = () => {
   let grp = null;
   for (const e of [...SUGGEST, ...EXAMPLES]) {
     const ex = exLang === 'ja' ? { ...e, h: e.hj ?? e.h, x: e.xj ?? e.x } : e;
-    if (ex.x.includes('S:') && !grp) { grp = document.createElement('span'); grp.className = 'note grp'; grp.textContent = exLang === 'ja' ? '多段階' : 'multi-step'; exRow.append(grp); }
-    exRow.append(exButton(ex));
+    if (ex.x.includes('S:') && !grp) { grp = document.createElement('span'); grp.className = 'note grp'; grp.lang = exLang; grp.textContent = exLang === 'ja' ? '多段階' : 'multi-step'; exRow.append(grp); }
+    const b = exButton(ex);
+    if (!e.q) b.lang = exLang; // a --suggest pill is the user's text, in whatever language they wrote it
+    exRow.append(b);
   }
 };
 for (const k in exLangs) exLangs[k].onclick = () => { exLang = k; try { localStorage.setItem('exlang', k); } catch {} drawEx(); };

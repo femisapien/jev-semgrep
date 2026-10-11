@@ -270,7 +270,8 @@ for (const b of pills) {
 // with no storage at all (none here) starts in English and still switches
 const exState = () => {
   const bs = byId.ex.children.filter(b => b.tagName === 'button');
-  return `${byId['ex-ja'].getAttribute('aria-pressed') === 'true' ? 'ja' : 'en'}: ${bs.length} buttons, "${bs[0].textContent}" .. "${bs.at(-1).textContent}", heading "${byId.ex.children.find(b => b.className === 'note grp').textContent}"`;
+  const grp = byId.ex.children.find(b => b.className === 'note grp');
+  return `${byId['ex-ja'].getAttribute('aria-pressed') === 'true' ? 'ja' : 'en'}: ${bs.length} buttons, "${bs[0].textContent}" (lang ${bs[0].lang ?? 'none'}) .. "${bs.at(-1).textContent}" (lang ${bs.at(-1).lang}), heading "${grp.textContent}" (lang ${grp.lang})`;
 };
 const n1 = sent.length;
 console.log(`examples ${exState()}`);
