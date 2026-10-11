@@ -208,7 +208,7 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                with 3 or more meanings)
                Lines in one request are each other's context, so a small chunk changes verdicts
                on ambiguous lines, not just speed
-  -j N         concurrent requests (default 8)
+  -j N         concurrent requests (default 8; 1 for a local URL: localhost, 127.0.0.1, [::1])
   -n           print line numbers
   --unit=UNIT  the unit of judgement: line (default), zero (NUL-terminated record), sentence-by-jev / sentence-by-rule,
                or function.
@@ -475,7 +475,7 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                なら行数はそれより少なくなる)
                同じリクエストの行は互いの文脈になるので、小さくすると速さだけでなく曖昧な行の
                判定も変わる
-  -j N         同時リクエスト数 (既定 8)
+  -j N         同時リクエスト数 (既定 8。ローカル URL (localhost・127.0.0.1・[::1]) では 1)
   -n           行番号を付ける
   --unit=UNIT  判定の単位: line (既定)、zero (NUL 終端レコード)、sentence-by-jev / sentence-by-rule、function
                -z / --null-data は --unit=zero と同じ。sentence-by-* と併用すると、レコードごとに文に分ける
@@ -703,6 +703,10 @@ const model = opt['sys1-model'] || SYS1GREP_MODEL || 'jev-latest';
 const PRICES = { 'jev-latest': 0.042, clef: 0.24, 'clef-flash': 0.09 };
 const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 const localUrl = !!customUrl && LOCAL_HOST.test(apiHost);
+// A local decision model serves one request at a time: Jeff answers a second with 529, strands-decider crashes (#180,
+// #181). So a local URL defaults to -j 1; a -j given anywhere (command line, SYS1GREP_OPTS, settings.json) wins.
+const localJ = localUrl && optSrc('j') === null;
+if (localJ) opt.j = '1';
 const pricePerM = localUrl ? 0 : Object.hasOwn(PRICES, model) ? PRICES[model] : PRICES['jev-latest'];
 const priceTag = localUrl ? ' (local URL, free)' : !customUrl ? ''
   : Object.hasOwn(PRICES, model) && model !== 'jev-latest' ? ` at ${model}'s list price` : " at TypeSafe's list price";
@@ -1069,7 +1073,7 @@ if (logPlan) {
     ? `--level ${opt.level}${optTag('level')} = -t ${tPos} -T ${tNeg}`
     : `-t ${tPos}${optTag('t')}, -T ${tNeg}${optTag('T')}`;
   const options = [
-    thresholds, `--chunk ${chunkLines}${optTag('chunk')}`, `-j ${opt.j}${optTag('j')}`,
+    thresholds, `--chunk ${chunkLines}${optTag('chunk')}`, `-j ${opt.j}${localJ ? ' (local URL)' : optTag('j')}`,
     !['line', 'zero'].includes(opt.unit) && `--unit=${opt.unit}${optTag('unit')}`,
     opt.dedup !== 'never' && `--dedup=${opt.dedup}${optTag('dedup')}`,
     opt.z && `-z${opt.gitlog && optSrc('z') === null ? ' (-g)' : optTag(optSrc('z') !== null ? 'z' : 'unit')}`,
