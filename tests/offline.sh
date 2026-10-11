@@ -1916,11 +1916,19 @@ mkdir -p "$tmp/sd" && cp "$F" "$tmp/sd/"
 eq "$(limit $J --serve "$tmp/sd" 2>&1 | head -1)" "sys1grep: --serve: $tmp/sd is a directory: add -r to search it (sys1grep --serve -r $tmp/sd)" "--serve DIR without -r: refused at launch"
 code 2 "--serve -- DIR without -r" -- limit $J --serve -- "$tmp/sd"
 eq "$(limit $J --serve "$tmp/sd" 2>/dev/null | wc -l | tr -d ' ')" "0" "--serve DIR without -r: no URL, nothing listening"
-for launch in -r -g; do
-  $J --serve $launch "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null &
+# -r in effect from wherever sys1grep itself takes it: the launch, SYS1GREP_OPTS, settings.json opts
+code 2 "--serve --no-r DIR with -r in SYS1GREP_OPTS" -- limit $E SYS1GREP_OPTS=-r SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --no-r "$tmp/sd"
+mkdir -p "$tmp/.config/sys1grep"
+for launch in -r -g opts settings badchild; do
+  case $launch in
+    opts) $E SYS1GREP_OPTS=-r SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null & ;;
+    settings) printf '{"opts":["-r"]}' >"$HS"; chmod 600 "$HS"; $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null & ;;
+    badchild) $J --serve --chunk 0 "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null & ;; # the check's own run fails otherwise: start as before
+    *) $J --serve $launch "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null & ;;
+  esac
   serve=$!
-  i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve $launch DIR did not start"; sleep 0.05; done
-  kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve6.url"
+  i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve DIR with -r from $launch did not start"; sleep 0.05; done
+  kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve6.url"; rm -f "$HS"
 done
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"
 echo "OK: $n checks passed (and the grep-guarded ones)"
