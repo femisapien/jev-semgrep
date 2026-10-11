@@ -329,10 +329,12 @@ fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 
 .hintctl { position: relative; display: inline-flex; }
 .qbtn { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); background: var(--input-bg); color: var(--muted); font-size: 10px; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; cursor: help; }
 .qbtn:hover, .qbtn:focus-visible { color: var(--fg); border-color: var(--accent); }
-.hint { position: absolute; z-index: 30; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 6px; width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 8px 10px; background: var(--code); color: var(--code-fg); font-size: 11px; line-height: 1.5; white-space: pre-line; text-align: left; border-radius: 8px; box-shadow: var(--shadow); display: none; pointer-events: none; }
+.hint { position: absolute; z-index: 30; left: 0; top: 100%; margin-top: 6px; width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 8px 10px; background: var(--code); color: var(--code-fg); font-size: 11px; line-height: 1.5; white-space: pre-line; text-align: left; border-radius: 8px; box-shadow: var(--shadow); display: none; pointer-events: none; }
+#hg-rank .hint, #hg-summarize .hint { left: auto; right: 0; }
+#hg-step .hint, #hg-edges .hint { top: auto; bottom: 100%; margin-top: 0; margin-bottom: 6px; }
 @media (hover: hover) { .hintctl:hover .hint { display: block; } }
 .qbtn:focus-visible + .hint, .hintgroup.open .hint { display: block; }
-@media (max-width: 1200px) { .hint { position: fixed; left: 16px; right: 16px; bottom: 16px; top: auto; transform: none; max-width: none; width: auto; } }
+@media (max-width: 480px) { .hint, #hg-step .hint, #hg-edges .hint, #hg-rank .hint, #hg-summarize .hint { position: fixed; left: 16px; right: 16px; bottom: 16px; top: auto; margin: 0; max-width: none; width: auto; } }
 .dlgbody { padding: 20px 24px; }
 dialog#sd { background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 0; }
 dialog#sd::backdrop { background: rgba(0, 0, 0, .45); }
@@ -357,7 +359,7 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
 <form id="f" autocomplete="off" onsubmit="return false">
 <fieldset class="group" id="startgrp"><legend class="glabel" title="what to search for; with multi-step on, the start of the walk">start</legend><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></fieldset>
-<div class="row"><div class="withhint hintgroup" id="hg-step"><label title="chain a start meaning to one or more end meanings, following the call/reference graph between them (--step-to)"><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><span class="hintctl"><button type="button" class="qbtn" id="q-step" aria-expanded="false" aria-controls="hint-step" aria-label="more about multi-step">?</button><small class="hint" id="hint-step" role="tooltip">Finds the start functions, then walks calls from them to the functions that match the end.
+<div class="row"><div class="withhint hintgroup" id="hg-step"><label><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><span class="hintctl"><button type="button" class="qbtn" id="q-step" aria-expanded="false" aria-controls="hint-step" aria-label="more about multi-step">?</button><small class="hint" id="hint-step" role="tooltip">Finds the start functions, then walks calls from them to the functions that match the end.
 A call is found by name: \`name(\` in a function's body (comments and strings left out) links to every function called \`name\`. Same-named functions all link; calls not written as \`name(\` (a function passed as a value, a call through a variable) are missed.
 Default: from a function to the functions it calls. --reverse: to the functions that call it.
 --hops limits how many calls away an end may be. For exact relations, start --serve with --edges=FILE.</small></span></div></div>
@@ -365,8 +367,8 @@ Default: from a function to the functions it calls. --reverse: to the functions 
 <div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; --reverse searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> --reverse</label></div></fieldset>
 <div class="row">
 <button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" title="stop the search that is running (its process is killed)" disabled>Stop</button>
-<div class="withhint hintgroup" id="hg-rank"><label title="order matches by Jev's relevance score, or by plain substring match; off keeps file order">rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
-<div class="withhint hintgroup" id="hg-summarize"><label title="have a small model read the matches and answer in a sentence or two"><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
+<div class="withhint hintgroup" id="hg-rank"><label>rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
+<div class="withhint hintgroup" id="hg-summarize"><label><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
 <div class="row"><pre id="cmd" title="the command line for the fields and controls as they are now; pasted in a terminal it runs the same search. The API key is never in it"></pre><button type="button" id="copy" title="copy the command line to the clipboard">Copy</button></div>
@@ -558,10 +560,42 @@ document.getElementById('save').onclick = () => {
 };
 // hint tooltips: hover (mouse only) and keyboard focus of the "?" are pure CSS; tap toggles .open on the icon's
 // group (a tap elsewhere or Esc closes every open one), so a touch screen reaches them without a pointer that hovers.
+// every "?" this page has: the four hand-written ones plus every hg()-built one in Details, so a new hg() call
+// never needs this list touched by hand.
 const HINTS = ['step', 'edges', 'rank', 'summarize', 'level', 't', 'T', 'C', 'autoscope', 'n', 'p', 'dedup', 'unit', 'include', 'exclude', 'changed', 'g'];
-const hintEls = HINTS.map(n => ({ b: document.getElementById('q-' + n), g: document.getElementById('hg-' + n) }));
-const closeHints = () => { for (const { b, g } of hintEls) { b.setAttribute('aria-expanded', 'false'); g.classList.remove('open'); } };
-for (const { b, g } of hintEls) b.onclick = e => { e?.stopPropagation?.(); const was = g.classList.contains('open'); closeHints(); if (!was) { b.setAttribute('aria-expanded', 'true'); g.classList.add('open'); } };
-document.addEventListener('click', closeHints);
+const hintEls = HINTS.map(n => ({ n: n, b: document.getElementById('q-' + n), g: document.getElementById('hg-' + n) }));
+// CSS places each tooltip next to its icon (left-aligned by default, right-aligned for rank/summarize, upward for
+// multi-step/edges) until this measures it and moves it where it fits. Every layout read happens right-aligned to the icon: a tooltip laid
+// out across the right edge, even for one measurement, makes a mobile browser widen its viewport (#214 review: the
+// right column of Details cut off on a tap), and one across the left edge does not. From there a translateX puts it
+// beside the icon -- left-aligned on the left half of the page, right-aligned on the right half -- and inside the 16px
+// margin. An upward tooltip that would cross the top opens downward, a downward one past the bottom opens upward,
+// and downward when neither fits. clientWidth/clientHeight: the layout viewport, without a classic scrollbar.
+// Runs for every id in HINTS, so a hg()-built hint gets it too.
+const clampHint = n => {
+  const hint = document.getElementById('hint-' + n), s = hint.style, de = document.documentElement;
+  s.transform = s.top = s.bottom = s.marginTop = s.marginBottom = '';
+  s.left = 'auto'; s.right = '0';
+  if (getComputedStyle(hint).position === 'fixed') { s.left = s.right = ''; return; } // <=480px: the bottom banner
+  const W = de.clientWidth, H = de.clientHeight, ib = hint.parentElement.getBoundingClientRect(), r = hint.getBoundingClientRect();
+  if (!r.width) return; // not shown yet (display: none)
+  const x = Math.max(16, Math.min(ib.left + ib.right > W ? r.left : ib.left, W - 16 - r.width));
+  if (x !== r.left) s.transform = 'translateX(' + (x - r.left) + 'px)';
+  const down = () => { s.top = '100%'; s.bottom = 'auto'; s.marginTop = '6px'; s.marginBottom = '0'; };
+  if (r.bottom <= ib.top) { if (r.top < 0) down(); }
+  else if (r.bottom > H) { s.top = 'auto'; s.bottom = '100%'; s.marginTop = '0'; s.marginBottom = '6px'; if (hint.getBoundingClientRect().top < 0) down(); }
+};
+for (const { n, b } of hintEls) {
+  b.parentElement.addEventListener('mouseenter', () => clampHint(n));
+  b.addEventListener('focus', () => clampHint(n));
+}
+// blur(): Esc (and a tap elsewhere) must drop real keyboard focus too, or :focus-visible keeps a tap-opened hint's
+// tooltip visible after .open is gone (r2 review); except: the "?" being toggled keeps focus, so Enter/Space on it
+// leaves focus (and the screen reader) on the control whose aria-expanded just changed (#214 review).
+const closeHints = except => { for (const { b, g } of hintEls) { b.setAttribute('aria-expanded', 'false'); g.classList.remove('open'); if (b !== except) b.blur(); } };
+for (const { n, b, g } of hintEls) b.onclick = e => { e?.stopPropagation?.(); const was = g.classList.contains('open'); closeHints(b); if (!was) { b.setAttribute('aria-expanded', 'true'); g.classList.add('open'); clampHint(n); } };
+document.addEventListener('click', () => closeHints());
+// a resize moves the icons; a tooltip left open would keep the placement measured for the old width
+window.addEventListener('resize', () => closeHints());
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeHints(); });
 </script></body></html>`;

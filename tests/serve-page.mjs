@@ -23,9 +23,11 @@ class El {
   append(...xs) { for (const x of xs) { x.parent = this; this.children.push(x); } }
   remove() { this.parent.children.splice(this.parent.children.indexOf(this), 1); }
   get firstChild() { return this.children[0]; }
+  get parentElement() { return this.parent; }
   get lastChild() { return this.children.at(-1); }
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); }
   focus() { document.activeElement = this; }
+  blur() { if (document.activeElement === this) document.activeElement = null; }
   setAttribute(k, v) { this.attrMap[k] = String(v); }
   getAttribute(k) { return this.attrMap[k]; }
   get classList() {
@@ -39,6 +41,9 @@ class El {
   // <dialog>: a no-op model good enough for the page's own onclose/backdrop-click logic to run against.
   showModal() { this.open = true; }
   close() { this.open = false; this.onclose?.(); }
+  // no layout engine here: by default a hidden (zero-width) box, so clampHint() leaves a hint alone; a test that
+  // drives the clamp sets rect, or a function of the element's inline style for a box that moves when restyled.
+  getBoundingClientRect() { return typeof this.rect === 'function' ? this.rect(this.style) : this.rect ?? { left: 100, right: 100, top: 0, bottom: 0, width: 0, height: 0 }; }
   get textContent() { return this.text; }
   set textContent(t) { this.children = []; this.text = t; }
   set innerHTML(h) { this.children = []; for (const [, t, a] of h.matchAll(/<(select|input|button)(\s[^>]*)?>/g)) this.append(new El(t, a ?? '')); }
@@ -104,14 +109,25 @@ byId.f.elements = byId.sf.elements = elements;
   console.log(`hover reveal is scoped to the icon, not the whole row: ${/@media \(hover: hover\) \{ \.hintctl:hover \.hint \{ display: block; \} \}/.test(html) ? 'ok' : 'FAIL'}`);
   console.log(`a shown hint never blocks clicks (pointer-events: none): ${/\.hint \{[^}]*pointer-events: none; \}/.test(html) ? 'ok' : 'FAIL'}`);
   console.log(`keyboard-focus of the icon and tap both reveal: ${/\.qbtn:focus-visible \+ \.hint, \.hintgroup\.open \.hint \{ display: block; \}/.test(html) ? 'ok' : 'FAIL'}`);
-  // mutation-provable: the three rules above are the only ones in the stylesheet that touch .hint's display. A
+  // r2 review: a bottom banner as far out as 1200px left the tooltip nowhere near the "?" at common tablet/laptop
+  // widths; it is now next to the icon (left-aligned, right-aligned for rank/summarize whose icon sits at the right
+  // of its row) at every width down to 480px, where it still becomes the bottom banner (small enough that nothing
+  // reasonably fits beside the icon).
+  console.log(`the tooltip is left-aligned to its icon, not centered under it: ${/\.hint \{[^}]*left: 0;[^}]*top: 100%;/.test(html) ? 'ok' : 'FAIL'}`);
+  console.log(`rank/summarize (right side of their row) right-align instead: ${html.includes('#hg-rank .hint, #hg-summarize .hint { left: auto; right: 0; }') ? 'ok' : 'FAIL'}`);
+  // multi-step and edges open above their icon instead: the control the user needs next (the end group, below
+  // multi-step; --hops/--reverse, which can wrap below edges' icon) must stay reachable, and pointer-events: none
+  // already makes that safe either way -- opening upward removes the overlap outright for the common case.
+  console.log(`multi-step and edges open above their icon, not over what is below: ${html.includes('#hg-step .hint, #hg-edges .hint { top: auto; bottom: 100%;') ? 'ok' : 'FAIL'}`);
+  console.log(`the bottom-banner fallback is back to <=480px, not 1200px: ${/@media \(max-width: 480px\) \{ \.hint,/.test(html) && !html.includes('1200px') ? 'ok' : 'FAIL'}`);
+  // mutation-provable: the three rules below are the only ones in the stylesheet that touch .hint's display. A
   // fourth -- an unconditional override appended later, e.g. ".hintgroup .hint { display: block; }", which the
   // string checks above do not rule out on their own -- would turn every tooltip permanently visible; stripping the
   // three known-good rules by their exact text and then searching what is left for another .hint/display pairing
   // catches it. Verified by injecting exactly that mutation into a scratch copy of this page: this line prints FAIL.
   const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
   const known = [
-    '.hint { position: absolute; z-index: 30; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 6px; width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 8px 10px; background: var(--code); color: var(--code-fg); font-size: 11px; line-height: 1.5; white-space: pre-line; text-align: left; border-radius: 8px; box-shadow: var(--shadow); display: none; pointer-events: none; }',
+    '.hint { position: absolute; z-index: 30; left: 0; top: 100%; margin-top: 6px; width: max-content; max-width: min(360px, calc(100vw - 32px)); padding: 8px 10px; background: var(--code); color: var(--code-fg); font-size: 11px; line-height: 1.5; white-space: pre-line; text-align: left; border-radius: 8px; box-shadow: var(--shadow); display: none; pointer-events: none; }',
     '.hintctl:hover .hint { display: block; }',
     '.qbtn:focus-visible + .hint, .hintgroup.open .hint { display: block; }',
   ];
@@ -119,15 +135,21 @@ byId.f.elements = byId.sf.elements = elements;
   console.log(`no stray rule overrides a hint's display beyond those three: ${/\.hint\b[^{}]*\{[^{}]*display\s*:/.test(stripped) ? 'FAIL' : 'ok'}`);
   const hintStepText = /<small class="hint" id="hint-step" role="tooltip">([\s\S]*?)<\/small>/.exec(html)?.[1] ?? '';
   console.log(`hint-step explains the walk: starts-with-Finds=${hintStepText.startsWith('Finds the start functions')} lines=${hintStepText.split('\n').length}`);
+  // the "?" tooltip now says what the label's own title= used to (r2 review: avoid keeping the same explanation in
+  // two places); --hops and the "edges" note have no "?" of their own and keep theirs.
+  const noTitle = n => byId['hg-' + n].children[0].getAttribute('title') === undefined;
+  console.log(`a label with a "?" no longer also carries a duplicate title=: step ${noTitle('step') ? 'ok' : 'FAIL'}, rank ${noTitle('rank') ? 'ok' : 'FAIL'}, summarize ${noTitle('summarize') ? 'ok' : 'FAIL'}`);
+  console.log(`--hops keeps its own title= (not a duplicate): ${elements.hops.parent.getAttribute('title') !== undefined ? 'ok' : 'FAIL'}`);
 }
 const sent = [];
 const document = {
-  getElementById: id => byId[id] ?? null, createElement: t => new El(t), activeElement: null, ls: {}, body: new El('body'),
+  getElementById: id => byId[id] ?? null, createElement: t => new El(t), activeElement: null, ls: {}, body: new El('body'), documentElement: { clientWidth: 1000, clientHeight: 800 },
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); },
   _fire(t, e) { for (const fn of this.ls[t] ?? []) fn(e); },
 };
 const page = fetch, ctx = vm.createContext({
-  document, setTimeout, URLSearchParams, AbortController, console, navigator: {},
+  document, setTimeout, URLSearchParams, AbortController, console, navigator: {}, window: { ls: {}, addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); } },
+  getComputedStyle: el => ({ position: el.position ?? 'absolute' }),
   // a browser adds Origin to a POST; Node's fetch does not
   fetch: (path, o) => { sent.push(new URL(path, U).searchParams); return page(new URL(path, U), o?.method === 'POST' ? { ...o, headers: { ...o.headers, origin: new URL(U).origin } } : o); },
 });
@@ -258,12 +280,40 @@ console.log(`a backdrop click closes the dialog: open=${byId.sd.open}`);
 const hintNames = HINTS;
 const hintState = () => hintNames.map(n => `${n}:${byId['q-' + n].getAttribute('aria-expanded')}/${byId['hg-' + n].classList.contains('open') ? 'open' : 'closed'}`).join(' ');
 console.log(`hints start closed: ${hintState()}`);
-byId['q-rank'].onclick();
+byId['q-rank'].focus(); byId['q-rank'].onclick();
 console.log(`tapping the rank "?" opens only it: ${hintState()}`);
+// #214 review: Enter/Space on a "?" is a click on it; that "?" keeps focus (only the others are blurred).
+console.log(`the "?" it opened keeps focus: ${document.activeElement === byId['q-rank']}`);
 document._fire('keydown', { key: 'Escape' });
-console.log(`Esc closes it: ${hintState()}`);
+// r2 review: Esc must drop real focus too, or a lingering :focus-visible keeps the tip shown after .open is gone.
+console.log(`Esc closes it and blurs the icon (no lingering :focus-visible): ${hintState()}, focus dropped=${document.activeElement !== byId['q-rank']}`);
 byId['q-step'].onclick();
 byId['q-edges'].onclick();
 console.log(`tapping a second "?" closes the first: ${hintState()}`);
 document._fire('click', {});
 console.log(`a tap elsewhere closes it: ${hintState()}`);
+// clampHint on a tap, in a 1000x800 viewport (documentElement.clientWidth/Height), against boxes laid out by hand:
+// icon = the "?"'s .hintctl; the 360px tooltip is measured right-aligned to it, at a height that depends on its
+// inline style (y: style => [top, bottom]).
+const tap = (n, icon, y, position) => {
+  Object.assign(byId['hint-' + n].parentElement, { rect: { width: 16, right: icon.left + 16, ...icon } });
+  Object.assign(byId['hint-' + n], { position, rect: s => {
+    const [top, bottom] = y(s);
+    return { width: 360, left: s.right === '0' ? icon.left + 16 - 360 : icon.left, right: s.right === '0' ? icon.left + 16 : icon.left + 360, top, bottom };
+  } });
+  byId['q-' + n].onclick();
+  const s = byId['hint-' + n].style;
+  document._fire('click', {});
+  return ['left', 'right', 'top', 'bottom', 'transform'].filter(k => s[k]).map(k => `${k}=${s[k]}`).join(' ') || 'none';
+};
+const below = () => [322, 372];
+console.log(`an icon on the left half: left-aligned to it: ${tap('level', { left: 100, top: 300, bottom: 316 }, below)}`);
+console.log(`an icon on the right half: right-aligned to it: ${tap('dedup', { left: 900, top: 300, bottom: 316 }, below)}`);
+console.log(`nudged in to the 16px margin: left ${tap('T', { left: 4, top: 300, bottom: 316 }, below)}, right ${tap('C', { left: 990, top: 300, bottom: 316 }, below)}`);
+console.log(`an upward tooltip past the top opens downward: ${tap('step', { left: 100, top: 30, bottom: 46 }, s => s.top === '100%' ? [52, 240] : [-164, 24])}`);
+console.log(`a downward tooltip past the bottom opens upward: ${tap('t', { left: 100, top: 700, bottom: 716 }, s => s.bottom === '100%' ? [600, 694] : [722, 816])}`);
+console.log(`room for neither: downward: ${tap('g', { left: 100, top: 100, bottom: 116 }, s => s.bottom === '100%' ? [-500, 94] : [122, 900])}`);
+console.log(`the <=480px banner (position: fixed) is left as CSS puts it: ${tap('n', { left: 900, top: 700, bottom: 716 }, () => [700, 900], 'fixed')}`);
+byId['q-rank'].onclick();
+ctx.window.ls.resize.forEach(fn => fn());
+console.log(`a resize closes an open tooltip: rank ${byId['hg-rank'].classList.contains('open') ? 'open' : 'closed'}`);
