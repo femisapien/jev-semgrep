@@ -1541,6 +1541,11 @@ BASE=${U%%\?*} K=${U#*k=} PORT=${U%%/\?*} PORT=${PORT##*:}
 [ -n "$K" ] || fail "--serve: the startup line carries a token"
 eq "$(curl -s "$U" | grep -c 'id="cmd"')" "1" "--serve: the page, fetched with its token"
 eq "$(curl -s -o /dev/null -w '%{http_code}' "$BASE")" "404" "--serve: the page without the token is refused"
+# #216: the Target section shows the launch's targets; the page has no way to send one, and a query naming another
+# file is ignored (only the known fields count), so a search reads the launch's targets and nothing else
+eq "$(curl -s "$U" | grep -o '<ul class="targets"[^>]*><li><code>[^<]*</code></li></ul>' | sed 's/.*<code>//; s/<.*//')" "$F" "--serve: Target shows the launch's target"
+printf 'a cat elsewhere\n' >"$tmp/other.txt"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&file=$tmp/other.txt&target=$tmp/other.txt" | grep -c elsewhere)" "0" "--serve: a target in the query is not searched"
 [ "$(curl -s "$BASE" | grep -c "$K")" = 0 ] || fail "--serve: a page fetched without the token never carries it"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text" | sed "s/$(printf '\033')\\[[0-9;]*m//g")" "cat
 cat dog" "--serve: rank off, matches in file order"
@@ -1727,10 +1732,14 @@ printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py
 $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
-eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #f #sd
-form children: #startgrp .row #steps .row .row #m #ex #d
+eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #f #m #sd
+form children: #sec-target #sec-cond #sec-opts #d
+sections: Target | Search conditions | Options; Details stays the fold
+search conditions: #h-cond #startgrp .row #steps #ex
+options: #h-opts .row .row
 start group: fieldset > .glabel #fields #add
 end group: fieldset > .glabel #ends #addend #hg-edges
+target: $tmp/m.py
 no <header>: ok
 no logo in the toolbar: ok
 --hops is type=text (styled like the other inputs): ok
@@ -1828,7 +1837,8 @@ an upward tooltip past the top opens downward: left=auto right=0 top=100% bottom
 a downward tooltip past the bottom opens upward: left=auto right=0 top=auto bottom=100% transform=translateX(344px)
 room for neither: downward: left=auto right=0 top=100% bottom=auto transform=translateX(344px)
 the <=480px banner (position: fixed) is left as CSS puts it: none
-a resize closes an open tooltip: rank closed" "--serve: the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
+a resize closes an open tooltip: rank closed
+no request carried a target: ok" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 # #206: the settings test wrote under the temp HOME, never the real one; the entry points that can drive --serve refuse the real HOME
 [ "$HS" != "$REALHOME/.config/sys1grep/settings.json" ] || fail "--serve settings: the test wrote the real settings.json"
@@ -1851,6 +1861,18 @@ case $U in http://127.0.0.1:$PORT/*) ;; *) fail "--serve --serve=PORT: the port:
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
 cat dog" "--serve --serve=PORT: searches still run"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# #216: with no target the Target section says what a search reads instead: stdin (left empty), or . with -r
+for launch in '' -r; do
+  $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve $launch >"$tmp/serve6.url" 2>/dev/null &
+  serve=$!
+  i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve $launch (no target) did not start"; sleep 0.05; done
+  curl -s "$(cat "$tmp/serve6.url")" | grep -o '<ul class="targets"[^>]*><li class="note">[^<]*' | sed 's/.*>//' >"$tmp/target.txt"
+  kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve6.url"
+  case $launch in
+    -r) eq "$(cat "$tmp/target.txt")" ". (this folder, recursively: -r)" "--serve -r, no target: Target says ." ;;
+    *) eq "$(cat "$tmp/target.txt")" "stdin, which --serve leaves empty: start it with a file or folder to search" "--serve, no target: Target says stdin" ;;
+  esac
+done
 code 2 "--serve: --suggest without a value" -- $J --serve "$F" --suggest
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"

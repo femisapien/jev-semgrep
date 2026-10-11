@@ -844,13 +844,17 @@ The printed URL carries a token made fresh at launch (`?k=...`). Every route nee
 it (in the query, or in a header for the page's own requests) the server answers 404 to everything, so another local
 account or process cannot read the page, its token, or a search's results merely by knowing the port.
 
-The page has the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
+The page has four sections (#216). **Target** shows what every search reads: the files and folders given at launch
+(`npm run serve -- src docs/a.md`), or with none what sys1grep falls back to, `.` with `-r` or stdin, which `--serve`
+leaves empty. It is shown only: the page cannot change it, and a target in a request is ignored. **Search conditions**
+holds the meaning fields, multi-step and the examples, **Options** the Search button, `rank`, `summarize` and the command
+line, and **Details** the other options; the results come below them. What they hold: the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
 switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and a reverse switch that makes it `--step-reverse-to`; off, they
 leave the command and the search and keep their values), example buttons (searches from this README and
 [docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search), a
 **Details** fold with the other options (`--level`, `-t`/`-T`, `-C`, `--auto-scope`, `-n`, `-p`, `--dedup`, `--unit`,
-`--include`, `--exclude`, `--changed-within`, `-g`), and above
-the results the **command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the
+`--include`, `--exclude`, `--changed-within`, `-g`), and the
+**command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the
 same search. An option at its launch value is left out of what the controls add. `rank` off shows the matches in file order
 as text, on shows the ranked cards; `summarize` adds a right column (it runs the search once more, so it costs one more
 request). Estimate cost is `--dry-run`. The first field is a question (`-Q`) by default. `--suggest=Q:TEXT` / `--suggest=e:TEXT` (or `--suggest TEXT`, repeatable; a bare TEXT is a question) puts suggested-question buttons first in the examples row; pressing one fills the page, then Search runs it. The options in Details each have a "?" hint saying what they do. While a search runs, Search and Estimate are disabled and **Stop** ends it (the child process is killed). The matches are colored as `--color=always` colors them (file names, line numbers, regex matches), the cards mark them with `<mark>`.
