@@ -1827,6 +1827,12 @@ calls that raise: steps shown: -e '/^ *def main/' --step-to -e '/raise /' -> ok
 1 to 2 calls away: steps shown: -e '/^ *def main/' --step-to -e '/raise /' --hops=1..2 -> ok
 who calls it (--step-reverse-to): steps shown: -e '/^ *def helper/' --step-reverse-to -e '/^ *def main/' -> ok
 raise or exit (two ends): steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/' -> ok
+examples en: 12 buttons, \"meaning, not words\" .. \"raise or exit (two ends)\", heading \"multi-step\"
+examples ja: 12 buttons, \"言葉ではなく意味で\" .. \"raise または exit（終点が2つ）\", heading \"多段階\"
+言葉ではなく意味で: steps hidden: -e '顧客が怒っている、または不満を持っている' -n
+-v で除外: steps hidden: -e 'ネットワークまたはリモート接続の失敗' -v 'リトライが行われた、または試みられた' -n
+呼び出し元は誰か (--step-reverse-to): steps shown: -e '/^ *def helper/' --step-reverse-to -e '/^ *def main/'
+examples en: 12 buttons, \"meaning, not words\" .. \"raise or exit (two ends)\", heading \"multi-step\"; 0 sent
 before delete: 1 start row(s)
 after delete: 1 start row(s), value \"\"
 gear opens the dialog: open=true, url \"\" SYS1GREP_URL in the environment wins over this; model \"\" not set: the default; key \"\" not saved, not set: the default; opts \"\"
@@ -1848,7 +1854,7 @@ a downward tooltip past the bottom opens upward: left=auto right=0 top=auto bott
 room for neither: downward: left=auto right=0 top=100% bottom=auto transform=translateX(344px)
 the <=480px banner (position: fixed) is left as CSS puts it: none
 a resize closes an open tooltip: rank closed
-no request carried a target: ok" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs), the settings dialog, and the hint tooltips"
+no request carried a target: ok" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 # #206: the settings test wrote under the temp HOME, never the real one; the entry points that can drive --serve refuse the real HOME
 [ "$HS" != "$REALHOME/.config/sys1grep/settings.json" ] || fail "--serve settings: the test wrote the real settings.json"

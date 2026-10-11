@@ -125,20 +125,24 @@ const CONTROLS = [
 ];
 const FIELD = /^[eavQS]:/; // an expression field: e:MEANING (-e), a, v, Q (-Q), S: (--step-to)
 // The example buttons, each from README, docs/use-cases.md or --help: x as the page sends it, then the controls it sets (by k).
+// hj / xj: the label and fields in Japanese (#215), for the page's EN / 日本語 switch; a regex example keeps its x.
 // Pressing one puts the page in that state: the rest go back to their launch values; an S: in x turns multi-step on.
 const EXAMPLES = [
-  { h: 'meaning, not words', x: ['e:customer is angry or frustrated'], n: true },
-  { h: 'a question (-Q)', x: ['Q:whether the server is down'], n: true },
-  { h: 'either meaning, with scores (-p)', x: ['e:customer is asking for a refund', 'e:delivery address change request'], n: true, p: true },
-  { h: 'exclude with -v', x: ['e:network or remote connection failure', 'v:a retry is happening or was attempted'], n: true },
-  { h: 'regex and meaning together', x: ['e:/catch/', 'a:the error is ignored'], n: true, p: true },
-  { h: 'stricter (--level strict)', x: ['e:a security risk or dangerous destructive operation'], level: 'strict', n: true },
-  { h: 'one line per template (--dedup)', x: ['e:a request failed'], dedup: 'always', n: true },
-  { h: 'one sentence at a time', x: ['e:the author admits they made a mistake'], unit: 'sentence-by-jev', n: true },
-  { h: 'calls that raise', x: ['e:/^ *def main/', 'S:', 'e:/raise /'] },
-  { h: '1 to 2 calls away', x: ['e:/^ *def main/', 'S:', 'e:/raise /'], hops: '1..2' },
-  { h: 'who calls it (--step-reverse-to)', x: ['e:/^ *def helper/', 'S:', 'e:/^ *def main/'], reverse: true },
-  { h: 'raise or exit (two ends)', x: ['e:/^ *def main/', 'S:', 'e:/raise /', 'e:/sys\\.exit/'] },
+  { h: 'meaning, not words', hj: '言葉ではなく意味で', x: ['e:customer is angry or frustrated'], xj: ['e:顧客が怒っている、または不満を持っている'], n: true },
+  { h: 'a question (-Q)', hj: '質問する (-Q)', x: ['Q:whether the server is down'], xj: ['Q:サーバーが落ちているかどうか'], n: true },
+  { h: 'either meaning, with scores (-p)', hj: 'どちらかの意味（スコア付き -p）', x: ['e:customer is asking for a refund', 'e:delivery address change request'],
+    xj: ['e:顧客が返金を求めている', 'e:配送先の変更依頼'], n: true, p: true },
+  { h: 'exclude with -v', hj: '-v で除外', x: ['e:network or remote connection failure', 'v:a retry is happening or was attempted'],
+    xj: ['e:ネットワークまたはリモート接続の失敗', 'v:リトライが行われた、または試みられた'], n: true },
+  { h: 'regex and meaning together', hj: '正規表現と意味を併用', x: ['e:/catch/', 'a:the error is ignored'], xj: ['e:/catch/', 'a:エラーが無視されている'], n: true, p: true },
+  { h: 'stricter (--level strict)', hj: 'より厳密に (--level strict)', x: ['e:a security risk or dangerous destructive operation'],
+    xj: ['e:セキュリティ上のリスク、または危険な破壊的操作'], level: 'strict', n: true },
+  { h: 'one line per template (--dedup)', hj: 'テンプレートごとに1行 (--dedup)', x: ['e:a request failed'], xj: ['e:リクエストが失敗した'], dedup: 'always', n: true },
+  { h: 'one sentence at a time', hj: '1文ずつ判定', x: ['e:the author admits they made a mistake'], xj: ['e:筆者が自分の間違いを認めている'], unit: 'sentence-by-jev', n: true },
+  { h: 'calls that raise', hj: 'raise に至る呼び出し', x: ['e:/^ *def main/', 'S:', 'e:/raise /'] },
+  { h: '1 to 2 calls away', hj: '1〜2 段先の呼び出し', x: ['e:/^ *def main/', 'S:', 'e:/raise /'], hops: '1..2' },
+  { h: 'who calls it (--step-reverse-to)', hj: '呼び出し元は誰か (--step-reverse-to)', x: ['e:/^ *def helper/', 'S:', 'e:/^ *def main/'], reverse: true },
+  { h: 'raise or exit (two ends)', hj: 'raise または exit（終点が2つ）', x: ['e:/^ *def main/', 'S:', 'e:/raise /', 'e:/sys\\.exit/'] },
 ];
 
 // p: the page's values (x: the fields, then one value per control and summarize / summarize-prompt); init: the launch's.
@@ -346,6 +350,9 @@ fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 
 .group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0 4px; }
 .sec { margin: 0; padding: 12px 0; } .sec + .sec { border-top: 1px solid var(--rule); }
 .sech { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+.exlang { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; }
+#ex .exlang button { background: none; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; font-size: 12px; }
+#ex .exlang button[aria-pressed=true] { background: var(--input-bg); color: var(--fg); font-weight: 700; }
 .targets { list-style: none; margin: 0; padding: 0; } #tg-git { margin: 0; }
 details.more { margin: 0; background: none; } details.more > summary { padding: 0; color: var(--muted); }
 main:has(#left:empty):not(.two) { display: none; } .targets code { font: 13px/1.6 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
@@ -396,7 +403,7 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 --hops limits how many calls away an end may be. For exact relations, start --serve with --edges=FILE.</small></span></div></div>
 <fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
 <div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; reverse (--step-reverse-to) searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> reverse</label></div></fieldset>
-<div class="row" id="ex"><span class="note label">examples</span></div>
+<div class="row" id="ex"><span class="note label">examples <span class="exlang" role="group" aria-label="language of the examples"><button type="button" id="ex-en" lang="en" aria-pressed="true">EN</button><button type="button" id="ex-ja" lang="ja" aria-pressed="false">日本語</button></span></span></div>
 </section>
 <section class="sec" id="sec-opts" aria-labelledby="h-opts"><h2 class="sech" id="h-opts" title="オプション">Options</h2>
 <div class="row">
@@ -539,10 +546,24 @@ f.onsubmit = e => { e.preventDefault(); go(); return false; };
 document.getElementById('est').onclick = () => run('dry');
 document.getElementById('add').onclick = () => addField('a').children[1].focus();
 document.getElementById('addend').onclick = () => addField('e', '', ends).children[1].focus();
-let grp = null;
-for (const ex of [...SUGGEST, ...EXAMPLES]) {
-  const s = ex.x.indexOf('S:'), row = document.getElementById('ex');
-  if (s >= 0 && !grp) { grp = document.createElement('span'); grp.className = 'note grp'; grp.textContent = 'multi-step'; row.append(grp); }
+// The examples in English or Japanese (#215), remembered per browser; a blocked storage means English. --suggest's
+// pills are the user's own text and stay as given.
+const exRow = document.getElementById('ex'), exLangs = { en: document.getElementById('ex-en'), ja: document.getElementById('ex-ja') };
+let exLang = 'en';
+try { if (localStorage.getItem('exlang') === 'ja') exLang = 'ja'; } catch {}
+const drawEx = () => {
+  for (const k in exLangs) exLangs[k].setAttribute('aria-pressed', String(k === exLang));
+  while (exRow.children.length > 1) exRow.lastChild.remove();
+  let grp = null;
+  for (const e of [...SUGGEST, ...EXAMPLES]) {
+    const ex = exLang === 'ja' ? { ...e, h: e.hj ?? e.h, x: e.xj ?? e.x } : e;
+    if (ex.x.includes('S:') && !grp) { grp = document.createElement('span'); grp.className = 'note grp'; grp.textContent = exLang === 'ja' ? '多段階' : 'multi-step'; exRow.append(grp); }
+    exRow.append(exButton(ex));
+  }
+};
+for (const k in exLangs) exLangs[k].onclick = () => { exLang = k; try { localStorage.setItem('exlang', k); } catch {} drawEx(); };
+const exButton = ex => {
+  const s = ex.x.indexOf('S:');
   const b = document.createElement('button'); b.type = 'button'; b.textContent = ex.h;
   b.title = ex.q ? 'suggested at launch (--suggest): ' + (ex.q === 'Q' ? 'a question (-Q)' : 'a meaning (-e)') + '; fills the page, then press Search' : 'an example: fills the page with this search, then press Search';
   b.onclick = () => {
@@ -551,8 +572,9 @@ for (const ex of [...SUGGEST, ...EXAMPLES]) {
     if (s < 0) addField('e', '', ends);
     setControls(ex); show();
   };
-  row.append(b);
-}
+  return b;
+};
+drawEx();
 document.getElementById('copy').onclick = e => navigator.clipboard.writeText(cmd.textContent).then(() => { e.target.textContent = 'Copied'; setTimeout(() => { e.target.textContent = 'Copy'; }, 1200); });
 f.addEventListener('input', show); f.addEventListener('change', show);
 setControls(INIT);

@@ -852,7 +852,8 @@ holds the meaning fields, multi-step and the examples, **Options** the Search bu
 line, and **Details** the other options; the results come below them. What they hold: the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
 switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and a reverse switch that makes it `--step-reverse-to`; off, they
 leave the command and the search and keep their values), example buttons (searches from this README and
-[docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search), a
+[docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search; `EN` / `日本語` beside the label switches their labels and
+meanings, remembered in the browser), a
 **Details** fold with the other options (`--level`, `-t`/`-T`, `-C`, `--auto-scope`, `-n`, `-p`, `--dedup`, `--unit`,
 `--include`, `--exclude`, `--changed-within`, `-g`), and the
 **command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the
