@@ -32,10 +32,12 @@ export const OPTIONS = {
   p: { type: 'boolean', default: false }, // print each meaning's probability
   dedup: { type: 'string', default: 'never' }, // auto|always|never: judge one representative per template, reuse its answer
   rank: { type: 'string' }, // jev|match: print the results best first, scored by Jev's answer on each or by its best match
-  // multi-step matching (#163): the expression before --step-to finds the start, the one after it the end
+  // multi-step matching (#163): the expression before --step-to finds the start, the one after it the end;
+  // --step-reverse-to walks the edges backwards (callee to caller)
   'step-to': { type: 'boolean', multiple: true },
+  'step-reverse-to': { type: 'boolean', multiple: true },
   edges: { type: 'string' }, // FILE: the edges to walk, one per line; default: the calls between functions
-  reverse: { type: 'boolean', default: false }, // walk the edges backwards
+  reverse: { type: 'boolean' }, // removed (--step-reverse-to): parsed only to say so
   hops: { type: 'string', default: '0..' }, // N, M..N or M..: the hops an end may be at
   'dry-run': { type: 'boolean', default: false }, // print the files and requests, send nothing
   verbose: { type: 'boolean', default: false }, // print the files and requests to stderr while searching
@@ -68,6 +70,7 @@ export const OPTIONS = {
 // hold (this NUL), cleared by the caller once parsed; the later of --no-rank/--rank=X (or --no-summarize/
 // --summarize=X) wins, as for any option.
 export const OFF = '\0';
+export const REVERSE_REMOVED = '--reverse was replaced by --step-reverse-to';
 // A bare --color / --dedup / --rank / --summarize means an implied default value, as grep's bare --color does;
 // parseArgs cannot express an optional value, so this fills it in before parseArgs ever sees it. --no-filename is
 // grep's name for --no-with-filename, --null-data grep's name for -z. summarizer: the TOOL a bare --summarize
@@ -87,7 +90,8 @@ export const fill = (a, summarizer) => (a === '--color' ? '--color=auto' : a ===
 export function parseOpts(filledArgs) {
   const { tokens } = parseArgs({ args: filledArgs, options: OPTIONS, allowPositionals: true, allowNegative: true, tokens: true });
   const command = k => k.name === 'install-templates' || (k.name === 'template' && k.value === 'list');
-  const bad = tokens.find(k => k.kind !== 'option' || ['e', 'a', 'v', 'question', 'step-to', 'cached', 'untracked'].includes(k.name) || command(k));
-  if (bad) throw new Error(bad.kind !== 'option' ? `'${bad.value ?? '--'}' is not an option` : command(bad) ? `${bad.rawName}${bad.value === undefined ? '' : `=${bad.value}`} is not allowed (it does something instead of searching)` : ['cached', 'untracked'].includes(bad.name) ? `--${bad.name} is not allowed (what is searched goes on the command line)` : `${bad.name.length > 1 ? '--' : '-'}${bad.name} is not allowed (${bad.name === 'step-to' ? 'expressions' : 'meanings'} go on the command line)`);
+  if (tokens.some(k => k.name === 'reverse')) throw new Error(REVERSE_REMOVED);
+  const bad = tokens.find(k => k.kind !== 'option' || ['e', 'a', 'v', 'question', 'step-to', 'step-reverse-to', 'cached', 'untracked'].includes(k.name) || command(k));
+  if (bad) throw new Error(bad.kind !== 'option' ? `'${bad.value ?? '--'}' is not an option` : command(bad) ? `${bad.rawName}${bad.value === undefined ? '' : `=${bad.value}`} is not allowed (it does something instead of searching)` : ['cached', 'untracked'].includes(bad.name) ? `--${bad.name} is not allowed (what is searched goes on the command line)` : `${bad.name.length > 1 ? '--' : '-'}${bad.name} is not allowed (${bad.name.startsWith('step-') ? 'expressions' : 'meanings'} go on the command line)`);
   return { tokens };
 }

@@ -37,7 +37,7 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   options as controls, results as the `--rank --format=html` cards, and the command line for the current controls with a Copy
   button. Each search runs sys1grep with the launch options plus the controls' changes. `node:http` only.
 - `--serve`: a multi-step switch takes the place of the `--step-to:` field kind. On, it shows the ends (`--step-to`, one or
-  more meanings) and the edges (`--hops`, `--reverse`); off, they leave the command line and the search. Example buttons turn it
+  more meanings) and the edges (`--hops`, and a reverse switch that makes the end `--step-reverse-to`); off, they leave the command line and the search. Example buttons turn it
   on with a walk filled in. A meaning field added with `+` is now searched (it was read from its remove button).
 - `--serve`: eight example buttons for ordinary searches, from the README and docs/use-cases.md (a meaning, `-Q`, two
   meanings with `-p`, `-v`, a regex with a meaning, `--level strict`, `--dedup`, `--unit=sentence-by-jev`), before the
@@ -55,8 +55,8 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   matches, walks the calls from them breadth first, and prints the paths to the reached functions the expression
   after it matches, as a tree of hop, `file:line` and name (#163). No score steers the walk: Jev judges every function
   against the start expression in one batch and the functions reached within `--hops=N|M..N|M..` against the end in another;
-  regex-only ends send nothing. `--edges=FILE` walks any other relation between lines, `--reverse` walks
-  backwards. stderr gives the functions reached at each hop and why the walk stopped. `--max-cost` counts both
+  regex-only ends send nothing. `--edges=FILE` walks any other relation between lines, `--step-reverse-to` walks
+  backwards (callee to caller). stderr gives the functions reached at each hop and why the walk stopped. `--max-cost` counts both
   batches, and `--dry-run` shows a bound. Refused with `-z`, `-g`, `-o`, `-c`, `-l`, `-A/-B/-C`, `--rank`,
   `--summarize` and `--dedup`.
 - `--rank[=jev|match]` prints the results best first, each under a numbered header (`1. FILE`, `1. [SCORE] FILE`
@@ -203,6 +203,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   (units, templates, requests, tokens) for every `--dedup` value.
 
 ### Changed
+- `--step-reverse-to` replaces `--reverse` (#212): `--reverse --step-to X` is now `--step-reverse-to X`, with the
+  same arguments, `--hops` and `--edges=FILE`. `--reverse` and `--no-reverse` (0.5.0-next.2 only) stop with
+  `--reverse was replaced by --step-reverse-to`; `--step-to` and `--step-reverse-to` together are an error.
 - The price shown and checked by `--max-cost` (`--dry-run`, the large-send warning, the question, the summary line)
   depends on the URL and the model: a local URL (`localhost`, `127.0.0.1`, `[::1]`, by the host as typed, only for a
   URL you set) is free, so `--max-cost` asks about nothing there and no longer stops a run without a terminal; a

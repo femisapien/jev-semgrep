@@ -116,7 +116,7 @@ byId.f.elements = byId.sf.elements = elements;
   console.log(`the tooltip is left-aligned to its icon, not centered under it: ${/\.hint \{[^}]*left: 0;[^}]*top: 100%;/.test(html) ? 'ok' : 'FAIL'}`);
   console.log(`rank/summarize (right side of their row) right-align instead: ${html.includes('#hg-rank .hint, #hg-summarize .hint { left: auto; right: 0; }') ? 'ok' : 'FAIL'}`);
   // multi-step and edges open above their icon instead: the control the user needs next (the end group, below
-  // multi-step; --hops/--reverse, which can wrap below edges' icon) must stay reachable, and pointer-events: none
+  // multi-step; --hops/reverse, which can wrap below edges' icon) must stay reachable, and pointer-events: none
   // already makes that safe either way -- opening upward removes the overlap outright for the common case.
   console.log(`multi-step and edges open above their icon, not over what is below: ${html.includes('#hg-step .hint, #hg-edges .hint { top: auto; bottom: 100%;') ? 'ok' : 'FAIL'}`);
   console.log(`the bottom-banner fallback is back to <=480px, not 1200px: ${/@media \(max-width: 480px\) \{ \.hint,/.test(html) && !html.includes('1200px') ? 'ok' : 'FAIL'}`);
@@ -205,7 +205,7 @@ elements.hops.value = '1..2';
 fire();
 console.log(state());
 console.log(await search());
-// on: --hops, --reverse and a second --step-to end (added with "+", not an example) all reach the command together
+// on: --hops, reverse (--step-reverse-to) and a second end (added with "+", not an example) all reach the command together
 document.getElementById('addend').onclick();
 byId.ends.children[1].children[1].value = '/sys\\.exit/';
 elements.reverse.checked = true;
@@ -227,7 +227,7 @@ byId.step.checked = false;
 fire();
 example('raise or exit (two ends)');
 console.log(`on ${byId.step.checked}, ${byId.ends.children.length} ends, ${state()}`);
-example('who calls it (--reverse)');
+example('who calls it (--step-reverse-to)');
 console.log(`on ${byId.step.checked}, ${byId.ends.children.length} ends, ${state()}`);
 console.log(await search());
 const sentBefore = sent.length;
@@ -241,7 +241,7 @@ console.log(`groups: ${byId.ex.children.map(b => (b.tagName === 'button' ? 'b' :
 const n0 = sent.length;
 for (const b of pills) b.onclick();
 console.log(`pressing every example sends ${sent.length - n0}`);
-example('who calls it (--reverse)');
+example('who calls it (--step-reverse-to)');
 example('exclude with -v');
 console.log(`on ${byId.step.checked}, ${state()}`);
 console.log(await search());

@@ -400,6 +400,7 @@ eq "$(ws '{"apikey":"sekrit9"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: warni
 eq "$(ws '{"apikey":"sekrit9"}' $J -n -e cat "$F" | nums)" "1 4 " "settings.json: an unknown field does not stop the search"
 eq "$(ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help 2>&1 >/dev/null | head -1)" "sys1grep: warning: ~/.config/sys1grep/settings.json: unknown field apikey (known: url, key, model, opts, summarizer, summarizerModel, summarizerKey); ignored" "settings.json: an unknown field still lets --help run"
 ws '{"apikey":"x"}' $E LANG=C node ../sys1grep.mjs --help >/dev/null 2>/dev/null; eq "$?" "0" "--help still exits 0 with an unknown field in settings.json"
+eq "$(ws '{"opts":["--reverse"]}' $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs -e cat "$F" 2>&1 | head -1)" "sys1grep: settings.json opts: --reverse was replaced by --step-reverse-to" "settings.json opts: --reverse says what replaced it"
 eq "$(ws '{"opts":"-n"}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: opts must be an array of strings" "settings.json: opts as a string"
 eq "$(ws '{"key":5}' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: key must be a string" "settings.json: a wrong type, no value shown"
 eq "$(ws '[]' $J -e cat "$F" 2>&1 | head -1)" "sys1grep: ~/.config/sys1grep/settings.json: not a JSON object" "settings.json: not an object"
@@ -533,7 +534,18 @@ eq "$($J --hops=1..2 -e '/^function main/' --step-to '/./' "$C" 2>/dev/null | gr
 eq "$($J --hops=2.. -e '/^function main/' --step-to '/./' "$C" 2>/dev/null | grep -c ':')" "3" "--hops=M..: no upper bound"
 eq "$($J --hops=1 -e '/^function main/' --step-to '/./' "$C" 2>&1 >/dev/null)" "sys1grep: walk: 1 at hop 0, 2 at hop 1; stopped: --hops=1" "--hops stops the walk, and says so"
 code 1 "--hops=3: fail is 2 hops away by the shortcut" -- $J --hops=3 -e '/^function main/' --step-to 'raised here' "$C"
-eq "$($J --reverse -e '/^function fail/' --step-to '/^function main/' "$C" 2>/dev/null | tr '\n' '|')" "0 $C-19-fail|  1 $C-16-check|    2 $C:1:main|" "--reverse: callee to caller"
+eq "$($J -e '/^function fail/' --step-reverse-to '/^function main/' "$C" 2>/dev/null | tr '\n' '|')" "0 $C-19-fail|  1 $C-16-check|    2 $C:1:main|" "--step-reverse-to: callee to caller"
+eq "$($J -e '/^function fail/' --step-reverse-to='/^function main/' "$C" 2>/dev/null | tail -1)" "    2 $C:1:main" "--step-reverse-to=X"
+eq "$($J --hops=1 -e '/^function fail/' --step-reverse-to '/./' "$C" 2>/dev/null | tr '\n' '|')" "0 $C-19-fail|  1 $C:12:parse|  1 $C:16:check|" "--step-reverse-to with --hops: fail's two callers"
+for o in --reverse --no-reverse; do
+  code 2 "$o is gone" -- $J $o -e '/^function fail/' --step-to '/^function main/' "$C"
+  eq "$($J $o -e '/^function fail/' --step-to '/^function main/' "$C" 2>&1)" "sys1grep: --reverse was replaced by --step-reverse-to" "$o: says what replaced it"
+done
+eq "$($E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS=--reverse node ../sys1grep.mjs -e '/^function fail/' --step-to '/./' "$C" 2>&1 | head -1)" "sys1grep: SYS1GREP_OPTS: --reverse was replaced by --step-reverse-to" "--reverse in SYS1GREP_OPTS: says what replaced it"
+code 2 "--step-reverse-to in SYS1GREP_OPTS" -- $E SYS1GREP_URL=$base/v1 SYS1GREP_OPTS=--step-reverse-to node ../sys1grep.mjs -e a "$C"
+eq "$($J -e '/^function fail/' --step-to '/./' --step-reverse-to '/./' "$C" 2>&1 | head -1)" "sys1grep: --step-to and --step-reverse-to cannot be combined: a step walks one way" "--step-to with --step-reverse-to"
+eq "$($J -e '/^function fail/' --step-reverse-to '/./' --step-reverse-to '/./' "$C" 2>&1 | head -1)" "sys1grep: --step-reverse-to cannot be given twice: only one step is supported" "--step-reverse-to given twice"
+eq "$($J -e '/^function fail/' --step-reverse-to '/./' -c "$C" 2>&1 | head -1)" "sys1grep: --step-reverse-to cannot be combined with -c: it prints paths, not lines" "--step-reverse-to: refusals name it"
 eq "$($J -p -e '/^function main/' --step-to -e 'fail(' -v short "$C" 2>/dev/null | tr '\n' '|')" \
   "0 $C-1-main	[0.05 0.05]|  1 $C-6-load	[0.05 0.05]|    2 $C:12:parse	[0.90 0.05]|  1 $C-16-check	[0.90 0.90]|    2 $C:19:fail	[0.90 0.05]|" \
   "--step-to -e -v: compound end, - for a unit on the way, -p its --step-to scores"
@@ -553,11 +565,12 @@ printf '%s\n' 'def load(fp):' '    """Calls nothing: decode() is only in the doc
   '@cache' 'def decode(s):' '    return raw_decode(s)' '' 'def raw_decode(s):' '    if not s:' '        raise ValueError("bad input")' '    return decode(s[1:])' >"$tmp/dec.py"
 eq "$($J -e '/def load\b/' --step-to 'bad input' "$tmp/dec.py" 2>/dev/null | tr '\n' '|')" \
   "0 $tmp/dec.py-1-load|  1 $tmp/dec.py-5-loads|    2 $tmp/dec.py-9-decode|      3 $tmp/dec.py:13:raw_decode|" "Python: a cycle ends, comments and docstrings hold no call"
-eq "$($J --reverse -e '/def raw_decode/' --step-to '/./' "$tmp/dec.py" 2>/dev/null | sed 's/.*://' | tr '\n' ' ')" "raw_decode decode loads load " "--reverse in Python, through the decorator"
+eq "$($J -e '/def raw_decode/' --step-reverse-to '/./' "$tmp/dec.py" 2>/dev/null | sed 's/.*://' | tr '\n' ' ')" "raw_decode decode loads load " "--step-reverse-to in Python, through the decorator"
 # --edges: any relation between lines, named in the file; a line not searched is counted
 printf 'alpha\nbeta\ngamma\ndelta\n' >"$tmp/e.txt"
 printf '%s\t%s\t%s\t%s\n' "$tmp/e.txt:1" A "$tmp/e.txt:3" C "$tmp/e.txt:3" C "$tmp/e.txt:4" D "$tmp/e.txt:9" X "$tmp/e.txt:1" A >"$tmp/edges.tsv"
 eq "$($J --edges="$tmp/edges.tsv" -e alpha --step-to delta "$tmp/e.txt" 2>/dev/null | tr '\n' '|')" "0 $tmp/e.txt-1-A|  1 $tmp/e.txt-3-C|    2 $tmp/e.txt:4:D|" "--edges: lines, with their names"
+eq "$($J --edges="$tmp/edges.tsv" -e delta --step-reverse-to alpha "$tmp/e.txt" 2>/dev/null | tr '\n' '|')" "0 $tmp/e.txt-4-D|  1 $tmp/e.txt-3-C|    2 $tmp/e.txt:1:A|" "--edges with --step-reverse-to: walked backwards"
 eq "$($J --edges "$tmp/edges.tsv" -e alpha --step-to delta "$tmp/e.txt" 2>&1 >/dev/null | head -1)" "sys1grep: warning: --edges: 1 of 3 edges name a line not searched" "--edges: a line not searched"
 printf 'one\ttwo\n' >"$tmp/bad.tsv"
 code 2 "--edges: a malformed line" -- $J --edges="$tmp/bad.tsv" -e alpha --step-to delta "$tmp/e.txt"
@@ -1469,7 +1482,7 @@ case $out in *'summarizingwithclaude'*'033[KSUMMARY'*) ;; *) fail "spinner while
 # --help: exit 0, Japanese by locale, lists the options
 code 0 "--help" -- $E LANG=C node ../sys1grep.mjs --help
 eq "$($E LANG=C node ../sys1grep.mjs -h | head -1 | cut -c1-15)" "usage: sys1grep" "-h"
-for o in '-Q, --question' '-q, --quiet' '--level=LEVEL' '--chunk=LINES' '-j N' '--color' '--sys1-api-key' '--dry-run' '--verbose' '-H, --with-filename' '--no-filename' '--summarize' '--summarize-prompt' '--format' '-M' '--max-filesize' '--max-cost' '-y, --yes' '--rank' '--no-rank' '--no-summarize' '--step-to' '--edges=FILE' '--reverse' '--hops=' '--template=NAME' '--install-templates' '--serve'; do
+for o in '-Q, --question' '-q, --quiet' '--level=LEVEL' '--chunk=LINES' '-j N' '--color' '--sys1-api-key' '--dry-run' '--verbose' '-H, --with-filename' '--no-filename' '--summarize' '--summarize-prompt' '--format' '-M' '--max-filesize' '--max-cost' '-y, --yes' '--rank' '--no-rank' '--no-summarize' '--step-to' '--edges=FILE' '--step-reverse-to' '--hops=' '--template=NAME' '--install-templates' '--serve'; do
   $E LANG=C node ../sys1grep.mjs --help | grep -q -- "$o" || fail "--help lacks $o"
 done
 $E LANG=C node ../sys1grep.mjs --help | grep -q 'grep by meaning' || fail "--help in English"
@@ -1504,7 +1517,7 @@ code 0 "--version with no key" -- $E node ../sys1grep.mjs --version
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -q '何も表示せず' || fail "--help in Japanese"
 $E LANG=C LC_MESSAGES=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -q '何も表示せず' || fail "LC_MESSAGES"
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -q '多段階マッチング' || fail "--help in Japanese: --step-to"
-$E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep -e '/^ *def helper/' --reverse --step-to '/^ *def main/' *.py" || fail "--help: --step-to examples"
+$E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep -e '/^ *def helper/' --step-reverse-to '/^ *def main/' *.py" || fail "--help: --step-to examples"
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep -e '/^ *def main/' --hops=1..2 --step-to '/raise /' *.py" || fail "--help in Japanese: --step-to examples"
 $E LANG=C node ../sys1grep.mjs --help | grep -qF "sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]" || fail "--help: --step-to usage names both sides"
 $E LANG=ja_JP.UTF-8 node ../sys1grep.mjs --help | grep -qF "sys1grep [OPTION]... -e START1 [-e START2]... --step-to END1 [-e END2]... [FILE...]" || fail "--help in Japanese: --step-to usage names both sides"
@@ -1709,7 +1722,7 @@ kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
 # the multi-step toggle: off, the page has no end fields and no --step-to; on, the end and --hops reach the command and
 # the search; off again, both leave (the values stay for the next time on); an example turns it on and fills it.
 # An empty end is refused before sending; pressing examples sends nothing, and each puts the page in its own state
-# (a plain example turns multi-step off and resets --reverse), and its search runs without an error.
+# (a plain example turns multi-step off and resets reverse), and its search runs without an error.
 printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py"
 $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
@@ -1770,13 +1783,13 @@ delete names: remove start condition 1 | remove start condition 2 | remove end c
 steps shown: -e '/def main/' --step-to
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
 x=e:/def main/|S:|e:/raise / hops=1..2 reverse=0 -> 2 lines
-addend + reverse: steps shown: -e '/def main/' --step-to -e '/raise /' -e '/sys\\.exit/' --hops=1..2 --reverse
+addend + reverse: steps shown: -e '/def main/' --step-reverse-to -e '/raise /' -e '/sys\\.exit/' --hops=1..2
 x=e:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
 steps hidden: -e '/def main/'
 x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
 on true, 2 ends, steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/'
-on true, 1 ends, steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse
+on true, 1 ends, steps shown: -e '/^ *def helper/' --step-reverse-to -e '/^ *def main/'
 x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. reverse=1 -> 2 lines
 empty end: Enter an end (--step-to)., 0 sent
 groups: [] b b b b b b b b [multi-step] b b b b
@@ -1793,7 +1806,7 @@ one line per template (--dedup): steps hidden: -e 'a request failed' --dedup=alw
 one sentence at a time: steps hidden: -e 'the author admits they made a mistake' --unit=sentence-by-jev -n -> ok
 calls that raise: steps shown: -e '/^ *def main/' --step-to -e '/raise /' -> ok
 1 to 2 calls away: steps shown: -e '/^ *def main/' --step-to -e '/raise /' --hops=1..2 -> ok
-who calls it (--reverse): steps shown: -e '/^ *def helper/' --step-to -e '/^ *def main/' --reverse -> ok
+who calls it (--step-reverse-to): steps shown: -e '/^ *def helper/' --step-reverse-to -e '/^ *def main/' -> ok
 raise or exit (two ends): steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/' -> ok
 before delete: 1 start row(s)
 after delete: 1 start row(s), value \"\"

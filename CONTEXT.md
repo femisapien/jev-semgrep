@@ -24,7 +24,7 @@ _Avoid_: source (the code uses `sources` for the units printed)
 
 ### What is judged, and multi-step matching
 
-Multi-step matching (`--step-to`, `--edges`, `--reverse`, `--hops`) came in #163. The terms below are its words.
+Multi-step matching (`--step-to`, `--step-reverse-to`, `--edges`, `--hops`) came in #163. The terms below are its words.
 
 **Unit**:
 What one question judges, and what decides which lines are printed for a match: a line, a record (`--unit=zero`, `-z`), a sentence (`--unit=sentence-by-jev` or `sentence-by-rule`), or a function (`--unit=function`). A regex term judges it locally; a meaning is judged by Jev.
@@ -43,7 +43,7 @@ The reached Units within `--hops` that match the expression after `--step-to`.
 _Avoid_: target (a Target is a searched file or blob), sink, goal
 
 **Edge**:
-One directed link from one Unit to another: a call by default (caller to callee), or a line of `--edges=FILE`. `--reverse` walks Edges backwards.
+One directed link from one Unit to another: a call by default (caller to callee), or a line of `--edges=FILE`. `--step-reverse-to` walks Edges backwards (#212).
 _Avoid_: call (only one kind of Edge), reference, arc
 
 **Hop**:

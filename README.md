@@ -709,7 +709,8 @@ sys1grep: walk: 1 at hop 0, 1 at hop 1, 3 at hop 2, 1 at hop 3, 1 at hop 4, 1 at
   a function's body, its comments, docstrings and strings left out, links to every function of that name. A name
   comes from the funcname line (the `def` under a decorator). `--edges=FILE` walks any other relation instead,
   one edge per line, `FROM_FILE:LINE<TAB>FROM_NAME<TAB>TO_FILE:LINE<TAB>TO_NAME`; a line stands for the unit that
-  holds it. `--reverse` walks the edges backwards, callee to caller.
+  holds it. `--step-reverse-to` in place of `--step-to` walks the edges backwards, callee to caller: the same
+  arguments, with `--hops` and `--edges`, and not together with `--step-to`.
 - **The walk.** Breadth first from every start at once. A function's hop is its shortest distance from any
   start, and each function is reached once, so a cycle ends. `--hops=N`, `--hops=M..N` and `--hops=M..` pick the
   hops an end may be at (default `0..`: a start that matches the end expression is an end at hop 0). A path that
@@ -844,7 +845,7 @@ it (in the query, or in a header for the page's own requests) the server answers
 account or process cannot read the page, its token, or a search's results merely by knowing the port.
 
 The page has the meaning fields (`+` adds one; each takes `-e`, `-a`, `-v` or `-Q`), `rank`, `summarize`, a **multi-step**
-switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and `--reverse`; off, they
+switch (on, it shows the end fields, `--step-to` and one or more meanings, and the edges, `--hops` and a reverse switch that makes it `--step-reverse-to`; off, they
 leave the command and the search and keep their values), example buttons (searches from this README and
 [docs/use-cases.md](docs/use-cases.md), then multi-step walks; one fills the fields and the controls it needs, puts the rest back to their launch values, and waits for Search), a
 **Details** fold with the other options (`--level`, `-t`/`-T`, `-C`, `--auto-scope`, `-n`, `-p`, `--dedup`, `--unit`,
@@ -1101,7 +1102,8 @@ usage: sys1grep [OPTION]... -e MEANING|-Q QUESTION [-a MEANING] [-v MEANING]... 
   --unit=function  judge each function and print its lines (see "One function at a time" above)
   --step-to EXPRESSION  print the paths from the functions the expression before it matches, along the
                calls, to the functions the expression after it matches (see "From one function to another" above)
-  --edges=FILE walk the edges in FILE instead of the calls; --reverse walks them backwards
+  --step-reverse-to EXPRESSION  --step-to walking the edges backwards, callee to caller
+  --edges=FILE walk the edges in FILE instead of the calls
   --hops=N|M..N|M..  the hops an end may be at (default 0..)
   -o           with --unit=sentence-by-*, print only the matching sentences
   -p           print each meaning's probability at the end of the line

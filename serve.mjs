@@ -33,7 +33,7 @@ const settingsView = cli => {
 // to --r), which refuses a positional (a target, #196) and a meaning/expression on its own; DENY below refuses the
 // rest, by the canonical OPTIONS name parseOpts resolves a token to, however it was spelled (-r, --r, or inside a
 // cluster like -rC1 or -nr all resolve to "r").
-const REFUSED_LAUNCH = /^(-[eavQlcqoziHV]|-[eavQ].+|--(question|step-to|format|color|verbose|dry-run|interactive|help|version|install-templates|quiet|null-data)(=.*)?)$/;
+const REFUSED_LAUNCH = /^(-[eavQlcqoziHV]|-[eavQ].+|--(question|step-to|step-reverse-to|format|color|verbose|dry-run|interactive|help|version|install-templates|quiet|null-data)(=.*)?)$/;
 // l/c/quiet/o/z/interactive/with-filename/version/format/color/verbose/dry-run/help: the page's own replacements
 // for a search's output shape and tracing (REFUSED_LAUNCH's set, minus what parseOpts already refuses on its own:
 // e/a/v/question/step-to/install-templates). r: unlike at launch, there is no target field here to keep a bare -r
@@ -103,6 +103,7 @@ const body = req => new Promise((resolve, reject) => {
 // The page's controls. toArgv() (below) turns their values into command-line tokens, in the server to run a search and
 // in the browser to print the command: one function, so the two cannot drift. A value equal to its launch value is left out.
 // re: what the server accepts; bool: a checkbox, neg its negation; words: one token per word; step: only with a --step-to field.
+// No flag: reverse adds no option of its own, it turns the field's --step-to into --step-reverse-to.
 const CONTROLS = [
   { k: 'rank', flag: '--rank', re: '^(jev|match)?$', nostep: true, def: '' },
   { k: 'level', flag: '--level', re: '^(loose|normal|strict)$' },
@@ -119,7 +120,7 @@ const CONTROLS = [
   { k: 'exclude', flag: '--exclude', words: true },
   { k: 'changed-within', flag: '--changed-within' },
   { k: 'hops', flag: '--hops', re: '^[\\d.]*$', step: true, def: '0..' },
-  { k: 'reverse', flag: '--reverse', neg: '--no-reverse', bool: true, step: true, def: false },
+  { k: 'reverse', bool: true, step: true, def: false },
 ];
 const FIELD = /^[eavQS]:/; // an expression field: e:MEANING (-e), a, v, Q (-Q), S: (--step-to)
 // The example buttons, each from README, docs/use-cases.md or --help: x as the page sends it, then the controls it sets (by k).
@@ -135,7 +136,7 @@ const EXAMPLES = [
   { h: 'one sentence at a time', x: ['e:the author admits they made a mistake'], unit: 'sentence-by-jev', n: true },
   { h: 'calls that raise', x: ['e:/^ *def main/', 'S:', 'e:/raise /'] },
   { h: '1 to 2 calls away', x: ['e:/^ *def main/', 'S:', 'e:/raise /'], hops: '1..2' },
-  { h: 'who calls it (--reverse)', x: ['e:/^ *def helper/', 'S:', 'e:/^ *def main/'], reverse: true },
+  { h: 'who calls it (--step-reverse-to)', x: ['e:/^ *def helper/', 'S:', 'e:/^ *def main/'], reverse: true },
   { h: 'raise or exit (two ends)', x: ['e:/^ *def main/', 'S:', 'e:/raise /', 'e:/sys\\.exit/'] },
 ];
 
@@ -144,10 +145,11 @@ const toArgv = (p, init) => {
   const v = k => p[k] ?? init[k], out = [];
   const step = (p.x ?? init.x).some(f => f[0] === 'S');
   for (const f of v('x')) {
-    if (f[0] === 'S') out.push('--step-to');
+    if (f[0] === 'S') out.push(v('reverse') ? '--step-reverse-to' : '--step-to');
     else if (f.slice(2)) out.push(`-${f[0]}`, f.slice(2));
   }
   for (const c of CONTROLS) {
+    if (!c.flag) continue;
     const off = (c.step && !step) || (c.nostep && step); // what does not apply goes back to its default, over a launch value
     if (off && c.def === undefined) continue;
     const now = off ? c.def : v(c.k), was = init[c.k];
@@ -171,13 +173,13 @@ const initOf = launch => {
     options: { rank: { type: 'string' }, level: { type: 'string' }, t: { type: 'string' }, T: { type: 'string' }, C: { type: 'string' },
       dedup: { type: 'string' }, unit: { type: 'string' }, 'auto-scope': { type: 'boolean' }, n: { type: 'boolean' }, p: { type: 'boolean' },
       g: { type: 'boolean' }, include: { type: 'string', multiple: true }, exclude: { type: 'string', multiple: true },
-      'changed-within': { type: 'string' }, hops: { type: 'string' }, reverse: { type: 'boolean' }, summarize: { type: 'string' },
+      'changed-within': { type: 'string' }, hops: { type: 'string' }, summarize: { type: 'string' },
       'summarize-prompt': { type: 'string' } },
   });
   const rank = o.rank === undefined || o.rank === '\0' ? '' : ['jev', 'match'].includes(o.rank) ? o.rank : 'jev'; // a bare --rank swallows the next word
   return { x: [], rank, level: o.level ?? 'normal', t: o.t ?? '', T: o.T ?? '', C: o.C ?? '', dedup: o.dedup ?? 'never', unit: o.unit ?? 'line',
     'auto-scope': o['auto-scope'] ?? true, n: !!o.n, p: !!o.p, g: !!o.g, include: (o.include ?? []).join(' '), exclude: (o.exclude ?? []).join(' '),
-    'changed-within': o['changed-within'] ?? '', hops: o.hops ?? '0..', reverse: !!o.reverse, summarize: o.summarize !== undefined && o.summarize !== '\0',
+    'changed-within': o['changed-within'] ?? '', hops: o.hops ?? '0..', reverse: false, summarize: o.summarize !== undefined && o.summarize !== '\0',
     'summarize-prompt': '' };
 };
 
@@ -361,10 +363,10 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <fieldset class="group" id="startgrp"><legend class="glabel" title="what to search for; with multi-step on, the start of the walk">start</legend><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></fieldset>
 <div class="row"><div class="withhint hintgroup" id="hg-step"><label><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><span class="hintctl"><button type="button" class="qbtn" id="q-step" aria-expanded="false" aria-controls="hint-step" aria-label="more about multi-step">?</button><small class="hint" id="hint-step" role="tooltip">Finds the start functions, then walks calls from them to the functions that match the end.
 A call is found by name: \`name(\` in a function's body (comments and strings left out) links to every function called \`name\`. Same-named functions all link; calls not written as \`name(\` (a function passed as a value, a call through a variable) are missed.
-Default: from a function to the functions it calls. --reverse: to the functions that call it.
+Default: from a function to the functions it calls. reverse (--step-reverse-to): to the functions that call it.
 --hops limits how many calls away an end may be. For exact relations, start --serve with --edges=FILE.</small></span></div></div>
 <fieldset class="group" id="steps" hidden><legend class="glabel">end (--step-to)</legend><div id="ends"></div><button type="button" id="addend" title="add an end" aria-label="add an end">+ end</button>
-<div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; --reverse searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> --reverse</label></div></fieldset>
+<div class="row edges hintgroup" id="hg-edges"><span class="note">edges</span><span class="hintctl"><button type="button" class="qbtn" id="q-edges" aria-expanded="false" aria-controls="hint-edges" aria-label="more about edges">?</button><small class="hint" id="hint-edges" role="tooltip">--hops limits how many hops away an end may be; reverse (--step-reverse-to) searches backwards along the graph</small></span><label title="how many hops the end may be from the start, e.g. 1..2">--hops <input type="text" name="hops" size="6" aria-describedby="hint-edges"></label><label><input type="checkbox" name="reverse" aria-describedby="hint-edges"> reverse</label></div></fieldset>
 <div class="row">
 <button type="submit" id="go">Search</button><button type="button" id="est" title="run with --dry-run: shows the request size and estimated cost, no results">Estimate cost</button><button type="button" id="stop" title="stop the search that is running (its process is killed)" disabled>Stop</button>
 <div class="withhint hintgroup" id="hg-rank"><label>rank <select name="rank" aria-describedby="hint-rank"><option value="">off</option><option value="jev">jev</option><option value="match">match</option></select></label><span class="hintctl"><button type="button" class="qbtn" id="q-rank" aria-expanded="false" aria-controls="hint-rank" aria-label="more about rank">?</button><small class="hint" id="hint-rank" role="tooltip">off keeps file order</small></span></div>
