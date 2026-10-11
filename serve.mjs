@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { FIELDS, maskOpts, maskUrl, readSettings, writeSettings } from './settings.mjs';
-import { fill, parseOpts } from './options.mjs';
+import { fill, parseOpts, REVERSE_REMOVED } from './options.mjs';
 
 // The settings panel's view of ~/.config/sys1grep/settings.json, one tuple per field: [the saved value (for a key, only
 // whether one is saved; for url and opts, with a --sys1-api-key or a url's userinfo masked, the same way --verbose
@@ -221,6 +221,7 @@ export function serve(argv) {
   const before = dd < 0 ? rest : rest.slice(0, dd), after = dd < 0 ? [] : rest.slice(dd);
   // the key stays in this process (never in the page or the command shown); the summary instruction is a control, not a launch option
   const [noKey, key] = lift(before, 'sys1-api-key'), [noPrompt, prompt] = lift(noKey, 'summarize-prompt'), [launch, suggested] = liftAll(noPrompt, 'suggest');
+  if (launch.some(a => /^--(no-)?reverse(=|$)/.test(a))) throw new Error(REVERSE_REMOVED);
   const bad = launch.find(a => REFUSED_LAUNCH.test(a));
   if (bad) throw new Error(`--serve: ${bad.split('=')[0]} is not for --serve (the page sets the meaning and shows the results as html)`);
   const init = { ...initOf(launch), 'summarize-prompt': prompt ?? '' };

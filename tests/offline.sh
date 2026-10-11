@@ -39,6 +39,8 @@ eq() { [ "$1" = "$2" ] || fail "$3: got '$1', want '$2'"; n=$((n + 1)); [ -z "$O
 code() { want=$1 what=$2; shift 3; set +e; "$@" >/dev/null 2>&1; got=$?; set -e; eq "$got" "$want" "$what (exit)"; }
 # notty COMMAND...: COMMAND in a new session, which has no controlling terminal (</dev/null alone still leaves /dev/tty)
 notty() { perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' "$@"; }
+# limit: killed after 10 s, so a --serve that starts when it should refuse fails the check instead of hanging the run
+limit() { perl -e 'alarm 10; exec @ARGV' "$@"; }
 
 # #199 round 3: package.json's "files" must list every ./NAME.mjs a shipped .mjs imports, or npm pack ships a
 # module that 404s (ERR_MODULE_NOT_FOUND) at runtime instead of failing a test (options.mjs was missed this way).
@@ -584,6 +586,7 @@ code 0 "--max-cost: each alone under it" -- $JN -e 'a comment' --step-to 'raised
 out=$($J --dry-run -e 'a comment' --step-to 'raised here' "$C")
 case $out in *'walk (a bound: every unit the start expression could hold for starts): 6 at hop 0; stopped: no new unit'*'[step-to]'*'dry run: 2 requests, 6 of 6 functions'*) ;; *) fail "--dry-run bound: $out" ;; esac
 eq "$($J --dry-run -e '/^function main/' --step-to 'raised here' "$C" | grep -c '^sys1grep: request')" "1" "--dry-run: a regex start walks for real"
+eq "$($J --dry-run -e 'a comment' --step-reverse-to 'raised here' "$C" | grep -c '^sys1grep: request [0-9]* \[step-reverse-to\]')" "1" "--dry-run: the end's request names --step-reverse-to"
 # refused, or wrong
 for o in -z -o -c -l '-A 1' '-C 1' --rank --summarize=claude --dedup=always --unit=line --hops=2..1 --hops=x; do
   code 2 "--step-to with $o" -- $J $o -e a --step-to b "$C"
@@ -1854,5 +1857,10 @@ kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 code 2 "--serve: --suggest without a value" -- $J --serve "$F" --suggest
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
+code 2 "--serve refuses --step-to at launch" -- limit $J --serve --step-to cat "$F"
+code 2 "--serve refuses --step-reverse-to at launch" -- limit $J --serve --step-reverse-to cat "$F"
+for o in --reverse --no-reverse; do
+  eq "$(limit $J --serve $o "$F" 2>&1 | head -1)" "sys1grep: --reverse was replaced by --step-reverse-to" "--serve $o: says what replaced it, at launch"
+done
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"
 echo "OK: $n checks passed (and the grep-guarded ones)"

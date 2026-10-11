@@ -2373,7 +2373,7 @@ if (multiStep) {
   guardCost(endChunks, endAsks, ending);
   let done = 0;
   spin.set(`${stepFlag}: 0 of ${endChunks.length} requests`);
-  await Promise.all(endChunks.map(c => pooled(() => evaluate(c, endAsks, ending, 'step-to').finally(() => spin.set(`${stepFlag}: ${++done} of ${endChunks.length} requests`)))));
+  await Promise.all(endChunks.map(c => pooled(() => evaluate(c, endAsks, ending, stepFlag.slice(2)).finally(() => spin.set(`${stepFlag}: ${++done} of ${endChunks.length} requests`)))));
   spin.stop();
   sent = [...new Set([...sent, ...endSend])];
   const ends = new Set(inRange.filter(u => ending.some(term => termHolds(term, u, endAsks))));
