@@ -6,7 +6,7 @@ import { refuseRealHome } from './home-guard.mjs';
 refuseRealHome('serve-page.mjs'); // its Save button writes the settings of the --serve it is pointed at
 
 const U = process.argv[2], html = await (await fetch(U)).text();
-const TARGETS = [...(/<ul class="targets"[^>]*>(.*?)<\/ul>/.exec(html)?.[1] ?? '').matchAll(/<code>([^<]*)<\/code>/g)].map(m => m[1]);
+const TARGETS = [...(/id="tg-files"(.*?)id="tg-git"/.exec(html)?.[1] ?? '').matchAll(/<code>([^<]*)<\/code>/g)].map(m => m[1]);
 const HINTS = [...html.matchAll(/id="hg-([\w-]+)"/g)].map(m => m[1]); // every "?" hint of the page
 const text = el => (el.children.length ? el.children.map(text).join('') : String(el.text));
 class El {
@@ -176,6 +176,15 @@ byId.fields.children[0].children[1].value = '/def main/';
 fire();
 console.log(state());
 console.log(await search());
+// #216: -g reads git log, not the targets: Target says so while it is on, and goes back when it is off
+const tg = () => `files ${byId['tg-files'].hidden ? 'hidden' : 'shown'}, git log ${byId['tg-git'].hidden ? 'hidden' : 'shown'}`;
+console.log(`target: ${tg()}`);
+elements.g.checked = true;
+fire();
+console.log(`-g on, target: ${tg()}`);
+elements.g.checked = false;
+fire();
+console.log(`-g off, target: ${tg()}`);
 // off: the start "+" (distinct from the end "+", and not toggle-gated) adds a second start; both reach the command
 document.getElementById('add').onclick();
 byId.fields.children[1].children[1].value = '/helper/';

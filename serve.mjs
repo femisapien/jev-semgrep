@@ -40,7 +40,7 @@ const REFUSED_LAUNCH = /^(-[eavQlcqoziHV]|-[eavQ].+|--(question|step-to|step-rev
 // (or a --serve started with no target, which then defaults to ".") in check. sys1-url/sys1-api-key: their own
 // fields.
 const DENY = new Set(['l', 'c', 'quiet', 'o', 'z', 'interactive', 'with-filename', 'version', 'format', 'color',
-  'verbose', 'dry-run', 'help', 'r', 'sys1-url', 'sys1-api-key']);
+  'verbose', 'dry-run', 'help', 'r', 'gitlog', 'sys1-url', 'sys1-api-key']);
 const optsError = opts => {
   let tokens;
   try { ({ tokens } = parseOpts(opts.map(a => fill(a, 'x')))); }
@@ -49,6 +49,7 @@ const optsError = opts => {
   if (!bad) return null;
   const tok = opts[bad.index]; // the original, unfilled element: a cluster like "-nr" stays "-nr", not just "-r"
   const why = bad.name === 'r' ? "it would widen the search past the launch's own targets"
+    : bad.name === 'gitlog' ? "it would switch the search from the launch's targets to git log; Details has -g"
     : bad.name === 'sys1-url' || bad.name === 'sys1-api-key' ? 'use the url / key field instead'
     : 'meanings, targets and output shape go on the command line';
   return `${tok} is not allowed (${why})`;
@@ -215,12 +216,13 @@ const fromQuery = (sp, init) => { // null when a value is out of range
 };
 
 // What every search reads (#216), shown on the page and never taken from it: the launch's own targets, or with none
-// what sys1grep falls back to. none: that fallback, in words. cwd: what a relative target is relative to.
+// what sys1grep falls back to. none: that fallback, in words. cwd: what a relative target is relative to. -g (at
+// launch or from Details) reads git log instead; the page shows that in place of these as -g goes on and off.
 const targetsOf = (launch, after) => {
   const { values: o, positionals } = parseArgs({ args: launch.map(a => fill(a, 'x')), options: OPTIONS, strict: false, allowPositionals: true, allowNegative: true });
   const list = [...positionals, ...after.slice(1)], cwd = process.cwd();
   if (list.length) return { list, cwd };
-  return { list, cwd, none: o.gitlog ? "git log's commits (-g)" : globalThis.SYS1GREP_GIT ? 'every file git tracks (git sys1grep)'
+  return { list, cwd, none: globalThis.SYS1GREP_GIT ? 'every file git tracks (git sys1grep)'
     : o.r ? '. (this folder, recursively: -r)' : 'stdin, which --serve leaves empty: start it with a file or folder to search' };
 };
 
@@ -309,10 +311,13 @@ export function serve(argv) {
 
 const json = x => JSON.stringify(x).replace(/</g, '\\u003c');
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-// The Target section's list: one target a line, the first SHOWN of them, then "+N more" holding the rest in its title.
+// The Target section: one target a line, the first SHOWN of them, then a "+N more" fold with the rest; or, while -g is
+// on, git log in their place (show() swaps the two).
 const SHOWN = 5;
-const targetList = ({ list, cwd, none }) => `<ul class="targets" id="targets" title="${esc(`relative to ${cwd}`)}">${none ? `<li class="note">${esc(none)}</li>`
-  : list.slice(0, SHOWN).map(t => `<li><code>${esc(t)}</code></li>`).join('') + (list.length > SHOWN ? `<li class="note" title="${esc(list.join('\n'))}">+${list.length - SHOWN} more</li>` : '')}</ul>`;
+const codes = list => list.map(t => `<li><code>${esc(t)}</code></li>`).join('');
+const targetList = ({ list, cwd, none }, g) => `<div id="targets" title="${esc(`relative to ${cwd}`)}"><ul class="targets" id="tg-files"${g ? ' hidden' : ''}>${none ? `<li class="note">${esc(none)}</li>`
+  : codes(list.slice(0, SHOWN)) + (list.length > SHOWN ? `<li><details class="more"><summary>+${list.length - SHOWN} more</summary><ul class="targets">${codes(list.slice(SHOWN))}</ul></details></li>` : '')}</ul>`
+  + `<p class="note" id="tg-git"${g ? '' : ' hidden'}>git log's commits (-g)</p></div>`;
 // a labelled control with its "?" hint (the same markup as rank's): the label, then the icon and its tooltip
 const hg = (name, label, text) => `<div class="withhint hintgroup" id="hg-${name}">${label.replace(/<(select|input)/, `<$1 aria-describedby="hint-${name}"`)}<span class="hintctl"><button type="button" class="qbtn" id="q-${name}" aria-expanded="false" aria-controls="hint-${name}" aria-label="more about ${label.replace(/<select.*?<\/select>/, '').replace(/<[^>]+>/g, '').trim()}">?</button><small class="hint" id="hint-${name}" role="tooltip">${text}</small></span></div>`;
 const page = ({ init, launch, after, token, targets, suggest }) => `<!doctype html>
@@ -340,7 +345,9 @@ fieldset.group { border: 1px solid var(--border); border-radius: 12px; padding: 
 .group legend.glabel { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 6px; padding: 0 4px; }
 .sec { margin: 0; padding: 12px 0; } .sec + .sec { border-top: 1px solid var(--rule); }
 .sech { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
-.targets { list-style: none; margin: 0; padding: 0; } .targets code { font: 13px/1.6 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+.targets { list-style: none; margin: 0; padding: 0; } #tg-git { margin: 0; }
+details.more { margin: 0; background: none; } details.more > summary { padding: 0; color: var(--muted); }
+main:has(#left:empty):not(.two) { display: none; } .targets code { font: 13px/1.6 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
 .row.edges { border-top: 1px solid var(--rule); margin-top: 10px; padding-top: 10px; }
 .del { border: none; background: none; color: var(--muted); padding: 4px; border-radius: 8px; display: inline-flex; }
 .del:hover { background: var(--input-bg); color: var(--fg); }
@@ -379,7 +386,7 @@ iframe { width: 100%; border: 0; min-height: 80px; } pre.out { white-space: pre-
 <div class="title" id="title"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="#fff" stroke-width="2.2"/><line x1="15.3" y1="15.3" x2="20.5" y2="20.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></span><h1>sys<span class="accent">1grep</span></h1><button type="button" class="gear" id="gear" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
 <form id="f" autocomplete="off" onsubmit="return false">
 <section class="sec" id="sec-target" aria-labelledby="h-target"><h2 class="sech" id="h-target" title="ターゲット / 検索対象: what every search reads, set when --serve starts; the page cannot change it">Target</h2>
-${targetList(targets)}</section>
+${targetList(targets, init.g)}</section>
 <section class="sec" id="sec-cond" aria-labelledby="h-cond"><h2 class="sech" id="h-cond" title="検索条件">Search conditions</h2>
 <fieldset class="group" id="startgrp"><legend class="glabel" title="what to search for; with multi-step on, the start of the walk">start</legend><div id="fields"></div><button type="button" id="add" title="add a start" aria-label="add a start">+ start</button></fieldset>
 <div class="row"><div class="withhint hintgroup" id="hg-step"><label><input type="checkbox" id="step" aria-describedby="hint-step"> multi-step</label><span class="hintctl"><button type="button" class="qbtn" id="q-step" aria-expanded="false" aria-controls="hint-step" aria-label="more about multi-step">?</button><small class="hint" id="hint-step" role="tooltip">Finds the start functions, then walks calls from them to the functions that match the end.
@@ -467,6 +474,9 @@ const show = () => {
     [...box.children].forEach((r, i) => { const d = r.children[2]; if (d) d.title = d.ariaLabel = 'remove ' + label + ' condition ' + (i + 1); });
   }
   steps.hidden = !multi;
+  const g = p.g && !multi; // -g does not apply to a walk
+  document.getElementById('tg-files').hidden = g;
+  document.getElementById('tg-git').hidden = !g;
   f.elements.rank.disabled = f.elements.summarize.disabled = multi;
   f.elements['summarize-prompt'].style.display = p.summarize && !multi ? '' : 'none';
   cmd.textContent = ['sys1grep', ...LAUNCH.map(t => quote(t)), ...shown(toArgv(p, INIT)), ...AFTER.map(t => quote(t))].join(' ');

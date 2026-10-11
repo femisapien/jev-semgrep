@@ -1598,6 +1598,8 @@ eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8
 # fields); a value-taking option's value (not starting with -) is not mistaken for a positional
 printf '{"opts":["/etc/passwd"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" "400 \"opts: '/etc/passwd' is not an option\"" "--serve settings: opts refuses a target"
+printf '{"opts":["-g"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" "400 \"opts: -g is not allowed (it would switch the search from the launch's targets to git log; Details has -g)\"" "--serve settings: opts refuses -g (#216: it would replace the targets)"
 printf '{"opts":["-e","x"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses a REFUSED flag (-e)"
 printf '{"opts":["--sys1-api-key=x"]}' >"$tmp/post.json"
@@ -1630,7 +1632,9 @@ eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -n
 printf '{"opts":["-nl"]}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -nl (the cluster's -l is REFUSED)"
 printf '{"opts":["-ng"]}' >"$tmp/post.json"
-eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts -ng (neither letter is -r or REFUSED)"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses -ng (the cluster's -g would replace the targets, #216)"
+printf '{"opts":["-np"]}' >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "200" "--serve settings: opts accepts -np (neither letter is denied)"
 # round 4: optsError now runs sys1grep.mjs's own parseArgs (parseOpts, options.mjs) instead of a hand-rolled
 # regex/cluster check, so every spelling of -r (and every REFUSED option) resolves to the same canonical OPTIONS
 # name regardless of form: --r (a single-letter name's long form; a prior round's cluster rewrite dropped this one
@@ -1783,6 +1787,9 @@ first start row: 3 children (select, input, delete)
 the first start field is a question (-Q) by default: ok
 steps hidden: -e '/def main/'
 x=e:/def main/ hops=0.. reverse=0 -> 1 lines
+target: files shown, git log hidden
+-g on, target: files hidden, git log shown
+-g off, target: files shown, git log hidden
 off, start+: steps hidden: -e '/def main/' -a /helper/
 x=e:/def main/|a:/helper/ hops=0.. reverse=0 -> 1 lines
 on, starts kept: steps shown: -e '/def main/' -a /helper/ --step-to
@@ -1861,18 +1868,31 @@ case $U in http://127.0.0.1:$PORT/*) ;; *) fail "--serve --serve=PORT: the port:
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=" | node -pe "JSON.parse(require('fs').readFileSync(0)).text")" "cat
 cat dog" "--serve --serve=PORT: searches still run"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
-# #216: with no target the Target section says what a search reads instead: stdin (left empty), or . with -r
-for launch in '' -r; do
+# #216: with no target the Target section says what a search reads instead: stdin (left empty), or . with -r; -g
+# shows git log in its place
+for launch in '' -r -g; do
   $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve $launch >"$tmp/serve6.url" 2>/dev/null &
   serve=$!
   i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve $launch (no target) did not start"; sleep 0.05; done
-  curl -s "$(cat "$tmp/serve6.url")" | grep -o '<ul class="targets"[^>]*><li class="note">[^<]*' | sed 's/.*>//' >"$tmp/target.txt"
+  curl -s "$(cat "$tmp/serve6.url")" >"$tmp/serve6.html"
+  grep -o '<ul class="targets"[^>]*><li class="note">[^<]*' "$tmp/serve6.html" | sed 's/.*>//' >"$tmp/target.txt"
+  grep -c '<ul class="targets" id="tg-files" hidden>.*<p class="note" id="tg-git">git log' "$tmp/serve6.html" >"$tmp/target.html" || true
   kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve6.url"
   case $launch in
     -r) eq "$(cat "$tmp/target.txt")" ". (this folder, recursively: -r)" "--serve -r, no target: Target says ." ;;
+    -g) eq "$(cat "$tmp/target.html")" "1" "--serve -g: Target shows git log, not the files" ;;
     *) eq "$(cat "$tmp/target.txt")" "stdin, which --serve leaves empty: start it with a file or folder to search" "--serve, no target: Target says stdin" ;;
   esac
 done
+# six targets, one after --: five shown, the rest in a "+N more" fold; a name is shown as text, never as markup
+mkdir -p "$tmp/tg" && for t in a b c d '<x&y>' f g; do : >"$tmp/tg/$t.txt"; done
+sg="$PWD/../sys1grep.mjs"
+(cd "$tmp/tg" && exec $E SYS1GREP_URL=$base/v1 node "$sg" --serve a.txt b.txt c.txt d.txt '<x&y>.txt' f.txt -- g.txt) >"$tmp/serve6.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve with six targets did not start"; sleep 0.05; done
+eq "$(curl -s "$(cat "$tmp/serve6.url")" | grep -o 'id="tg-files">.*</ul><p' | sed 's/<\/*code>/|/g; s/<[^>]*>//g; s/^id="tg-files">//; s/<p$//' | tr -s '|')" \
+  "|a.txt|b.txt|c.txt|d.txt|&lt;x&amp;y&gt;.txt|+2 more|f.txt|g.txt|" "--serve: six targets and one after --: five, then +2 more holding the rest, names escaped"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve6.url"
 code 2 "--serve: --suggest without a value" -- $J --serve "$F" --suggest
 code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
