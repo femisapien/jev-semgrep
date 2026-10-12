@@ -1051,6 +1051,20 @@ if ((summarizer || (opt.rank && !opt.l)) && opt.format === 'html') {
   try { template = parseTemplate(text, where); } catch (e) { die(e.message, false); }
   if (summarizer && !(template.head + template.tail).includes('{{answer}}')) die(`template ${where}: --summarize needs {{answer}} outside <!--result--> ... <!--/result-->`, false);
 } else if (optSrc('template') === '') die('--template needs --format=html with --rank or --summarize (not -l)');
+// #227: --serve's "summarize the results on screen". stdin is those results as the page shows them; only the
+// summarize step runs: nothing is read and nothing goes to Jev. Bounded like a summary of a search.
+if (process.env.SYS1GREP_SUMMARIZE === 'stdin') {
+  if (!summarizer) die('SYS1GREP_SUMMARIZE=stdin needs --summarize', false);
+  const text = readFileSync(0, 'utf8');
+  if (Buffer.byteLength(text) > SUMMARY_MAX) die(`--summarize: the results are more than the ${SUMMARY_MAX / 1024} KB to summarize; narrow the expression`, false);
+  if (!text.includes(' like it)')) {
+    if (Array.isArray(summarizer)) summarizer = summarizer.map(a => a.replace(DEDUP_HINT, ''));
+    else summarizer.prompt = summarizer.prompt.replace(DEDUP_HINT, '');
+  }
+  const ok = await summarizeText(text, ''); // {{count}}: unknown, the text is what the page shows
+  await new Promise(r => process.stdout.write('', r)); // process.exit() can drop buffered stdout when piped
+  process.exit(ok ? 0 : 2);
+}
 const includes = (opt.include ?? []).map(globRe('include')), excludes = (opt.exclude ?? []).map(globRe('exclude'));
 for (const [o, gs] of [['include', opt.include], ['exclude', opt.exclude]]) for (const g of gs ?? [])
   if (g.includes('/')) console.error(`sys1grep: warning: --${o}='${g}' has a /, but globs match the file name only, not the path, so it matches no file`);
@@ -2461,12 +2475,8 @@ if (opt.rank) {
     });
   }
 }
-// No match sends nothing to the summarizer. It writes its answer straight to stdout; failing, it has said why on stderr.
+// No match sends nothing to the summarizer.
 let summaryFailed = false;
-const writeAnswer = answer => {
-  const doc = { title: `sys1grep: ${termsSaid(false)}`, query: termsSaid(false), count: matched, answer: answer.replace(/\n+$/, '') };
-  process.stdout.write(fillPart(template.head, doc) + fillPart(template.tail, doc));
-};
 const pipedBytes = Buffer.byteLength(piped.join(''));
 // --summarize=ask: on a terminal (stdout too, so $(...) never waits), asked on /dev/tty; -y says yes unasked (-q has
 // exited at its first match by now). Not asked, or answered no: nothing more, and the exit status stays the search's.
@@ -2483,50 +2493,60 @@ if (summarize && pipedBytes > SUMMARY_MAX) {
   const count = likeIt.size ? `${matched} matching ${unitName} as ${pipedUnits.size} representatives` : `${matched} matching ${unitName}`;
   console.error(`sys1grep: --summarize: ${count} (${size}) are more than the ${SUMMARY_MAX / 1024} KB to summarize; narrow the expression${willFold ? '' : ' or add --dedup=always'}`);
   summaryFailed = true;
-} else if (summarize && Array.isArray(summarizer)) {
-  // spawn, not spawnSync: the spinner's timer runs only while the event loop does. Its output erases the spinner.
-  spin.set(`summarizing with ${opt.summarize}`);
-  const child = spawn(summarizer[0], summarizer.slice(1), { stdio: ['pipe', 'pipe', 'pipe'] });
-  // pipe() keeps backpressure; the once() listener, registered first, erases the spinner before the first chunk lands.
-  // --format=html: the answer is collected, not streamed, since it goes into the template's {{answer}}.
-  let answer = '';
-  if (template) { child.stdout.setEncoding('utf8'); child.stdout.on('data', d => { answer += d; }); }
-  for (const [from, to] of [[child.stdout, template ? null : process.stdout], [child.stderr, process.stderr]]) { from.once('data', spin.stop); if (to) from.pipe(to, { end: false }); }
-  child.stdin.on('error', () => {}); // EPIPE: the TOOL exited without reading it all; its exit status says what happened
-  child.stdin.end(piped.join(''));
-  const [status, signal] = await new Promise(r => child.on('error', e => die(`--summarize=${opt.summarize}: ${e.message}`, false)).on('close', (c, sg) => r([c, sg])));
-  spin.stop();
-  if (status !== 0) { console.error(`sys1grep: --summarize=${opt.summarize}: ${summarizer[0]} exited with ${status ?? signal}`); summaryFailed = true; }
-  else if (template) writeAnswer(answer);
-} else if (summarize) {
-  // An OpenAI-compatible server (#76): one request, no CLI. A cold local model can take a while, well past Jev's
-  // 60s timeout.
-  spin.set(`summarizing with ${opt.summarize}`);
-  let res;
-  try {
-    res = await fetch(summarizer.url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...(summarizer.key && { authorization: `Bearer ${summarizer.key}` }) },
-      body: JSON.stringify({
-        model: summarizer.model,
-        messages: [{ role: 'system', content: summarizer.prompt }, { role: 'user', content: piped.join('') }],
-        stream: false,
-        reasoning_effort: 'none',
-      }),
-      signal: AbortSignal.timeout(300_000),
-    });
-  } catch (e) { die(`--summarize=${opt.summarize}: ${e.cause?.message ?? e.message}`, false); }
-  spin.stop();
-  if (!res.ok) {
-    console.error(`sys1grep: --summarize=${opt.summarize}: ${res.status}: ${(await res.text()).slice(0, 300).replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')}`);
-    summaryFailed = true;
+} else if (summarize) summaryFailed = !(await summarizeText(piped.join(''), matched));
+// Runs the summarizer on text (count: how many matches it holds, for the template's {{count}}): its answer goes to
+// stdout; failing, it has said why on stderr and this returns false. Also called on its own (#227, before any search).
+async function summarizeText(text, count) {
+  const writeAnswer = answer => {
+    const doc = { title: `sys1grep: ${termsSaid(false)}`, query: termsSaid(false), count, answer: answer.replace(/\n+$/, '') };
+    process.stdout.write(fillPart(template.head, doc) + fillPart(template.tail, doc));
+  };
+  if (Array.isArray(summarizer)) {
+    // spawn, not spawnSync: the spinner's timer runs only while the event loop does. Its output erases the spinner.
+    spin.set(`summarizing with ${opt.summarize}`);
+    const child = spawn(summarizer[0], summarizer.slice(1), { stdio: ['pipe', 'pipe', 'pipe'] });
+    // pipe() keeps backpressure; the once() listener, registered first, erases the spinner before the first chunk lands.
+    // --format=html: the answer is collected, not streamed, since it goes into the template's {{answer}}.
+    let answer = '';
+    if (template) { child.stdout.setEncoding('utf8'); child.stdout.on('data', d => { answer += d; }); }
+    for (const [from, to] of [[child.stdout, template ? null : process.stdout], [child.stderr, process.stderr]]) { from.once('data', spin.stop); if (to) from.pipe(to, { end: false }); }
+    child.stdin.on('error', () => {}); // EPIPE: the TOOL exited without reading it all; its exit status says what happened
+    child.stdin.end(text);
+    const [status, signal] = await new Promise(r => child.on('error', e => die(`--summarize=${opt.summarize}: ${e.message}`, false)).on('close', (c, sg) => r([c, sg])));
+    spin.stop();
+    if (status !== 0) { console.error(`sys1grep: --summarize=${opt.summarize}: ${summarizer[0]} exited with ${status ?? signal}`); return false; }
+    if (template) writeAnswer(answer);
   } else {
-    const body = await res.json();
-    const content = body?.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') { console.error(`sys1grep: --summarize=${opt.summarize}: no answer in the response`); summaryFailed = true; }
-    else if (template) writeAnswer(content);
-    else process.stdout.write(content.endsWith('\n') ? content : `${content}\n`);
+    // An OpenAI-compatible server (#76): one request, no CLI. A cold local model can take a while, well past Jev's
+    // 60s timeout.
+    spin.set(`summarizing with ${opt.summarize}`);
+    let res;
+    try {
+      res = await fetch(summarizer.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(summarizer.key && { authorization: `Bearer ${summarizer.key}` }) },
+        body: JSON.stringify({
+          model: summarizer.model,
+          messages: [{ role: 'system', content: summarizer.prompt }, { role: 'user', content: text }],
+          stream: false,
+          reasoning_effort: 'none',
+        }),
+        signal: AbortSignal.timeout(300_000),
+      });
+    } catch (e) { die(`--summarize=${opt.summarize}: ${e.cause?.message ?? e.message}`, false); }
+    spin.stop();
+    if (!res.ok) {
+      console.error(`sys1grep: --summarize=${opt.summarize}: ${res.status}: ${(await res.text()).slice(0, 300).replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')}`);
+      return false;
+    } else {
+      const body = await res.json();
+      const content = body?.choices?.[0]?.message?.content;
+      if (typeof content !== 'string') { console.error(`sys1grep: --summarize=${opt.summarize}: no answer in the response`); return false; }
+      else if (template) writeAnswer(content);
+      else process.stdout.write(content.endsWith('\n') ? content : `${content}\n`);
+    }
   }
+  return true;
 }
 // Summary only when interactive; grep prints nothing to stderr when scripted.
 if (dry) {

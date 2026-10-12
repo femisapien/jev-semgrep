@@ -973,6 +973,14 @@ rm -f "$tmp/sum.in"; code 1 "--summarize, no match" -- $S --summarize -e zebra "
 eq "$($S --summarize -e bird "$F" 2>&1 || true)" "" "--summarize, no match: no hint"
 code 2 "--summarize, summarizer fails" -- env SUM_EXIT=3 $S --summarize -e cat "$F"
 code 2 "--summarize, an unreadable file" -- $S --summarize -e cat "$F" "$tmp/none"
+# #227: SYS1GREP_SUMMARIZE=stdin, --serve's summary of the results on screen: stdin goes to the summarizer, no file is
+# read and nothing goes to Jev; bounded as a search's summary is
+reset
+eq "$(printf 'x.txt:1:cat\n' | env SYS1GREP_SUMMARIZE=stdin $S --summarize -e cat "$tmp/none")" "SUMMARY" "SYS1GREP_SUMMARIZE=stdin: the summary only"
+eq "$(cat "$tmp/sum.in") $(stat count)" "x.txt:1:cat 0" "SYS1GREP_SUMMARIZE=stdin: stdin as it is, nothing to Jev"
+code 2 "SYS1GREP_SUMMARIZE=stdin, the summarizer fails" -- sh -c "printf 'x\n' | env SUM_EXIT=3 SYS1GREP_SUMMARIZE=stdin $S --summarize -e cat"
+code 2 "SYS1GREP_SUMMARIZE=stdin without --summarize" -- sh -c "printf 'x\n' | env SYS1GREP_SUMMARIZE=stdin $S -e cat"
+code 2 "SYS1GREP_SUMMARIZE=stdin over 200 KB" -- sh -c "head -c 204801 /dev/zero | env SYS1GREP_SUMMARIZE=stdin $S --summarize -e cat"
 # --format with --summarize (#122; was --summarize-format): each format asks for itself, plain when none is given; the sentence follows the fixed part
 $S --summarize -e cat "$F" >/dev/null; tail -1 "$tmp/sum.argv" | grep -q 'Cite file:line when the lines carry them\. Answer in plain text: no Markdown' || fail "--summarize asks for plain by default: $(tail -1 "$tmp/sum.argv")"
 $S --summarize --format=markdown -e cat "$F" >/dev/null; tail -1 "$tmp/sum.argv" | grep -q 'them\. Answer in Markdown\.$' || fail "--summarize --format=markdown: $(tail -1 "$tmp/sum.argv")"
@@ -1004,6 +1012,7 @@ eq "$(stat count)" "1" "--summarize=ask, y: no second search"
 eq "$(tr '\n' '|' <"$tmp/sum.in")" "1:cat|4:cat dog|" "--summarize=ask, y: the summarizer gets the lines printed"
 echo "$out" | tr -d '\r' | grep -A1 '^4:cat dog$' | grep -q 'Summarize these matches? \[y/N\] y' || fail "--summarize=ask: the question follows the lines: $out"
 echo "$out" | tr -d '\r' | grep -qx 'SUMMARY' || fail "--summarize=ask, y: the summary prints: $out"
+eq "$(echo "$out" | tr -d '\r' | grep -cx 'SUMMARY')" "1" "--summarize=ask, y: the summarizer runs once"
 for a in n ''; do
   rm -f "$tmp/sum.in"; out=$(asking "$S --summarize=ask -n -e cat '$F'" "$a")
   [ ! -e "$tmp/sum.in" ] || fail "--summarize=ask, answer '$a': nothing summarized"
@@ -1684,6 +1693,9 @@ for o in --r -rC1 -nrC1 -rj8 -h -nh --l; do
   printf '{"opts":["%s"]}' "$o" >"$tmp/post.json"
   eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses $o"
 done
+# more than 64 KB is refused as too large, and the connection closes (#232 review): no wait for the upload
+node -e "process.stdout.write(JSON.stringify({ model: 'x'.repeat(70000) }))" >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '413 "too large: settings are at most 64 KB"' "--serve settings: a body over 64 KB"
 # url and a URL summarizer must be http(s); a tool name (not a URL) is not checked
 printf '{"url":"not a url"}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a bad url is refused"
@@ -1740,7 +1752,7 @@ rm -f "$HS"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=jev&dedup=always" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: --step-to drops rank and dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
+$E SYS1GREP_SUMMARIZE=stdin SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve2.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (launch options) did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve2.url"); BASE=${U%%\?*} K=${U#*k=}
@@ -1748,7 +1760,7 @@ eq "$(curl -s "$U" | grep -c SECRETKEY123 || true)" "0" "--serve: the key is not
 eq "$(curl -s -H "x-sys1grep-token: $K" "${BASE}settings" | field 'j.key')" '[false,"cmd"]' "--serve settings: a launch --sys1-api-key wins, by source only"
 eq "$(curl -s "$U" | grep -c -- '--summarize-prompt' || true)" "1" "--serve: the launch summary instruction is a control's value"
 eq "$(curl -s "$U" | grep -c 'SUGGEST = \[{"h":"why is it slow","x":\["Q:why is it slow"\],"q":"Q"},{"h":"disk full","x":\["e:disk full"\],"q":"e"},{"h":"plain","x":\["Q:plain"\],"q":"Q"}\]')" "1" "--serve: --suggest, both forms, a bare text is a question"
-eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt (and SYS1GREP_SUMMARIZE in --serve's environment, not passed on)"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # a launch --summarize=ask: results are the lines (nothing asked, no terminal), the summary pane summarizes; a launch TOOL stays the pane's
@@ -1784,14 +1796,14 @@ kill $serve $hang 2>/dev/null; wait $serve $hang 2>/dev/null || true
 # An empty end is refused before sending; pressing examples sends nothing, and each puts the page in its own state
 # (a plain example turns multi-step off and resets reverse), and its search runs without an error.
 printf '%s\n' 'def main():' '  helper()' 'def helper():' '  raise X' >"$tmp/m.py"
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --suggest=e:disk\ full "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
+$E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --suggest=e:disk\ full "$tmp/m.py" >"$tmp/serve4.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve4.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (multi-step) did not start"; sleep 0.05; done
 eq "$(HOME="$tmp" node serve-page.mjs "$(cat "$tmp/serve4.url")")" "card children: #title #f #m #sd
 form children: #sec-target #sec-cond #sec-opts #d
 sections: Target | Search conditions | Options; Details stays the fold
 search conditions: #h-cond #startgrp .row #steps #ex
-options: #h-opts .row .row
+options: #h-opts .row #ask .row
 start group: fieldset > .glabel #fields #add
 end group: fieldset > .glabel #ends #addend #hg-edges
 target: $tmp/m.py
@@ -1905,7 +1917,15 @@ a downward tooltip past the bottom opens upward: left=auto right=0 top=auto bott
 room for neither: downward: left=auto right=0 top=100% bottom=auto transform=translateX(344px)
 the <=480px banner (position: fixed) is left as CSS puts it: none
 a resize closes an open tooltip: rank closed
-no request carried a target: ok" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
+no request carried a target: ok
+summarize, no results on screen: no question
+summarize, results on screen: \"Summarize the results on screen as they are?\" [OK / Not now] (lang en)
+Not now: no question, box checked, 0 sent
+a field changed since: \"The results on screen are from before the fields or options changed. Summarize them as they are anyway?\" [OK / Not now] (lang en)
+日本語: \"表示中の結果は、欄やオプションを変える前のものです。それでもそのまま要約しますか？\" [OK / 今はしない] (lang ja)
+the field back as it was: \"Summarize the results on screen as they are?\" [OK / Not now] (lang en)
+multi-step on: no question
+OK: no question; sent /summarize with the results on screen as they are, 1 request(s) in all; summary pane shown: \"SUMMARY\\n\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 # #224: every example that needs no Jev (regexes only, the multi-step ones) walks at least one call, with the arguments the
 # page sends, on this repository and on a small Python program: a line at hop 1 or more (not only a start that is also
@@ -1954,6 +1974,57 @@ eq "$(env HOME="$REALHOME" node -e "import('./home-guard.mjs').then(m => console
 eq "$(env HOME="$tmp" node -e "import('./home-guard.mjs').then(m => console.log(m.isRealHome()))")" "false" "home-guard: a temporary HOME is not"
 # the check that ends every run sees a settings.json appear or change (a stand-in for the real home, never the real one)
 eq "$(REALHOME="$tmp/rh"; mkdir -p "$REALHOME/.config/sys1grep"; a=$(realsettings); printf '{}' >"$REALHOME/.config/sys1grep/settings.json"; b=$(realsettings); [ "$a" = absent ] && [ "$b" != absent ] && echo seen)" "seen" "the real-settings check sees a file appear"
+# #227: /summarize runs only the summarizer on the posted results: no search, nothing to Jev, bounded, POST from the page only
+U=$(cat "$tmp/serve4.url"); BASE=${U%%\?*} K=${U#*k=}
+sp() { q=$1; shift; curl -s -o "$tmp/sp.out" -w '%{http_code}' -X POST -H "x-sys1grep-token: $K" "$@" "${BASE}summarize?$q"; }
+ST="content-type: text/plain"
+printf 'm.py:2:  helper()\n' >"$tmp/sp.txt"
+# the recording stub again (a later check swapped in one that only answers)
+printf '%s\n' '#!/bin/sh' 'for a in "$@"; do printf "%s\n" "$a"; done >"$SUM.argv"' 'cat >"$SUM.in"' 'echo SUMMARY' >"$tmp/bin/claude"
+reset; rm -f "$tmp/sum.in"
+eq "$(sp 'x=e:helper&rank=' -H "Origin: ${BASE%/}" -H "$ST" --data-binary @"$tmp/sp.txt") $(field j.text <"$tmp/sp.out")" '200 "SUMMARY\n"' "--serve summarize: answers the summary"
+eq "$(cat "$tmp/sum.in")" "m.py:2:  helper()" "--serve summarize: the summarizer gets the posted results as they are"
+eq "$(stat count)" "0" "--serve summarize: no search, nothing sent to Jev"
+grep -qF 'bear on: "helper"' "$tmp/sum.argv" || fail "--serve summarize: asked about the search the results came from: $(tail -1 "$tmp/sum.argv")"
+eq "$(sp 'x=e:helper' -H "$ST" --data-binary @"$tmp/sp.txt")" "403" "--serve summarize: POST without an Origin"
+eq "$(sp 'x=e:helper' -H 'Origin: http://evil.example' -H "$ST" --data-binary @"$tmp/sp.txt")" "403" "--serve summarize: POST from another Origin"
+eq "$(curl -s -o /dev/null -w '%{http_code}' -H "x-sys1grep-token: $K" "${BASE}summarize?x=e:helper")" "405" "--serve summarize: GET is refused"
+eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H 'content-type: application/json' --data-binary @"$tmp/sp.txt")" "415" "--serve summarize: text only"
+eq "$(sp 'x=e:helper&x=S:&x=e:raise' -H "Origin: ${BASE%/}" -H "$ST" --data-binary @"$tmp/sp.txt")" "400" "--serve summarize: not for multi-step"
+eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H "$ST" --data-binary ' ')" "400" "--serve summarize: nothing to summarize"
+head -c 204801 /dev/zero | tr '\0' a >"$tmp/sp.big"
+eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H "$ST" --data-binary @"$tmp/sp.big") $(field j.error <"$tmp/sp.out")" '413 "the results on screen are more than 200 KB to summarize; narrow the search"' "--serve summarize: an oversized body is refused, saying why"
+node -e "process.stdout.write('あ'.repeat(70000))" >"$tmp/sp.big" # 70,000 characters, 210,000 bytes: the bound is in bytes
+eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H "$ST" --data-binary @"$tmp/sp.big")" "413" "--serve summarize: the bound counts bytes, not characters"
+# far over the bound, from a client that writes the whole body before it reads anything (as a browser may), three
+# times: the upload must finish, then the 413 with its reason must be there to read. A request the server stops
+# reading stalls the upload ("still sending"); one it closes under the upload resets it on Linux (#232 CI, node 22)
+eq "$(node --input-type=module -e "
+import { connect } from 'node:net';
+const [base, token] = process.argv.slice(1), u = new URL(base), size = 20e6;
+const once = () => new Promise(done => {
+  const s = connect(Number(u.port), u.hostname);
+  let b = Buffer.alloc(0), written = false;
+  const t = setTimeout(() => { s.destroy(); done(written ? 'no answer 10 s after sending' : 'still sending after 10 s'); }, 10000);
+  const end = r => { clearTimeout(t); s.destroy(); done(r); };
+  s.on('error', e => end('reset (' + e.code + ')'));
+  s.write('POST /summarize?x=e:helper HTTP/1.1\r\nhost: ' + u.host + '\r\nx-sys1grep-token: ' + token + '\r\norigin: ' + u.origin + '\r\ncontent-type: text/plain\r\ncontent-length: ' + size + '\r\n\r\n');
+  s.write(Buffer.alloc(size, 97), () => {
+    written = true;
+    s.on('data', c => {
+      b = Buffer.concat([b, c]);
+      const h = b.indexOf('\r\n\r\n');
+      if (h < 0) return;
+      const head = b.subarray(0, h).toString(), rest = b.subarray(h + 4), len = /content-length: *(\d+)/i.exec(head);
+      let body = null;
+      if (len && rest.length >= Number(len[1])) body = rest.subarray(0, Number(len[1])).toString();
+      else if (!len && rest.toString().endsWith('0\r\n\r\n')) body = rest.toString().replace(/^[0-9a-f]+\r\n|\r\n0\r\n\r\n$/g, '');
+      if (body !== null) end(head.split(' ')[1] + ' ' + JSON.parse(body).error);
+    });
+  });
+});
+for (let i = 0; i < 3; i++) console.log(await once());
+" "$BASE" "$K" | sort | uniq -c | sed 's/^ *//')" "3 413 the results on screen are more than 200 KB to summarize; narrow the search" "--serve summarize: 20 MB written in full before reading: the upload ends and the 413 with its reason is there"
 rm -f "$HS"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # two --serve (npm run serve adds one): the last one's port is used and neither reaches the child

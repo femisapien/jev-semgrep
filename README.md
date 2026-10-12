@@ -869,7 +869,10 @@ meanings, remembered in the browser), a
 **command line** for the controls as they are now, with a Copy button; pasted in a terminal it runs the
 same search. An option at its launch value is left out of what the controls add. `rank` off shows the matches in file order
 as text, on shows the ranked cards; `summarize` adds a right column (it runs the search once more, so it costs one more
-request). Estimate cost is `--dry-run`. The first field is a question (`-Q`) by default. `--suggest=Q:TEXT` / `--suggest=e:TEXT` (or `--suggest TEXT`, repeatable; a bare TEXT is a question) puts suggested-question buttons first in the examples row; pressing one fills the page, then Search runs it. The options in Details each have a "?" hint saying what they do. While a search runs, Search and Estimate are disabled and **Stop** ends it (the child process is killed). The matches are colored as `--color=always` colors them (file names, line numbers, regex matches), the cards mark them with `<mark>`.
+request). Checking `summarize` while results are on screen asks, in the page, whether to summarize those results as
+they are (#227): OK sends their text back and only the summarizer runs on it, no new search and nothing to Jev (up to
+200 KB, as `--summarize` takes); Not now leaves the box checked for the next Search. If a field or option changed since
+those results came, the question says so. No results on screen, or multi-step on: no question. Estimate cost is `--dry-run`. The first field is a question (`-Q`) by default. `--suggest=Q:TEXT` / `--suggest=e:TEXT` (or `--suggest TEXT`, repeatable; a bare TEXT is a question) puts suggested-question buttons first in the examples row; pressing one fills the page, then Search runs it. The options in Details each have a "?" hint saying what they do. While a search runs, Search and Estimate are disabled and **Stop** ends it (the child process is killed). The matches are colored as `--color=always` colors them (file names, line numbers, regex matches), the cards mark them with `<mark>`.
 
 Each search runs sys1grep itself (the options given at launch, then the controls'), so everything the command line does
 the page does, and only that. The server listens on `127.0.0.1` only, answers only to that host name, and the page never
