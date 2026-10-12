@@ -34,6 +34,17 @@ const settingsView = cli => {
 // rest, by the canonical OPTIONS name parseOpts resolves a token to, however it was spelled (-r, --r, or inside a
 // cluster like -rC1 or -nr all resolve to "r").
 const REFUSED_LAUNCH = /^(-[eavQlcqoziHV]|-[eavQ].+|--(question|step-to|step-reverse-to|format|color|verbose|dry-run|interactive|help|version|install-templates|quiet|null-data)(=.*)?)$/;
+// --unit=zero is -z by another name (options.mjs): REFUSED_LAUNCH's bare-token test cannot single it out from every
+// other --unit value, and --unit also takes its value split ("--unit zero"), so this follows parseArgs' own rule
+// (string option, no short form: the last --unit/--unit= wins) to find what --unit actually resolves to at launch.
+const unitAt = launch => {
+  let v;
+  for (let i = 0; i < launch.length; i++) {
+    if (launch[i] === '--unit') v = launch[++i];
+    else if (launch[i].startsWith('--unit=')) v = launch[i].slice(7);
+  }
+  return v;
+};
 // l/c/quiet/o/z/interactive/with-filename/version/format/color/verbose/dry-run/help: the page's own replacements
 // for a search's output shape and tracing (REFUSED_LAUNCH's set, minus what parseOpts already refuses on its own:
 // e/a/v/question/step-to/install-templates). r: unlike at launch, there is no target field here to keep a bare -r
@@ -118,7 +129,9 @@ const CONTROLS = [
   { k: 'T', flag: '-T', re: '^(\\d+(\\.\\d+)?)?$' },
   { k: 'C', flag: '-C', re: '^\\d*$', nostep: true },
   { k: 'dedup', flag: '--dedup', re: '^(never|auto|always)$', nostep: true, def: 'never' },
-  { k: 'unit', flag: '--unit', re: '^(line|sentence-by-jev|sentence-by-rule)$', nostep: true, def: 'line' },
+  // No def: a multi-step walk's own default unit is function (sys1grep.mjs), not line, so the control goes
+  // inert (like C) rather than forcing a value back. Whatever the launch already set keeps applying unchanged.
+  { k: 'unit', flag: '--unit', re: '^(line|sentence-by-jev|sentence-by-rule|function)$', nostep: true },
   { k: 'auto-scope', flag: '--auto-scope', neg: '--no-auto-scope', bool: true },
   { k: 'n', flag: '-n', neg: '--no-n', bool: true },
   { k: 'p', flag: '-p', neg: '--no-p', bool: true },
@@ -257,6 +270,7 @@ export function serve(argv) {
   if (launch.some(a => /^--(no-)?reverse(=|$)/.test(a))) throw new Error(REVERSE_REMOVED);
   const bad = launch.find(a => REFUSED_LAUNCH.test(a));
   if (bad) throw new Error(`--serve: ${bad.split('=')[0]} is not for --serve (the page sets the meaning and shows the results as html)`);
+  if (unitAt(launch) === 'zero') throw new Error("--serve: --unit=zero is not for --serve (it is -z's output shape, already refused there)");
   const init = { ...initOf(launch), 'summarize-prompt': prompt ?? '' }, targets = targetsOf(launch, after);
   const secret = key === undefined ? [] : [`--sys1-api-key=${key}`];
   const cli = { url: lift(launch, 'sys1-url')[1], model: lift(launch, 'sys1-model')[1], key };
@@ -468,7 +482,7 @@ ${hg('C', '<label>context lines (-C) <input name="C" size="3" inputmode="numeric
 ${hg('autoscope', '<label class="chk"><input type="checkbox" name="auto-scope"> auto-scope</label>', '--auto-scope: narrow the files by what Jev says the meaning restricts to (a language, a kind of file); off is --no-auto-scope')}
 ${hg('n', '<label class="chk"><input type="checkbox" name="n"> -n line numbers</label>', '-n: show line numbers')}${hg('p', '<label class="chk"><input type="checkbox" name="p"> -p scores</label>', '-p: show the probability of each meaning on the matching lines')}
 ${hg('dedup', '<label>dedup <select name="dedup"><option>never</option><option>auto</option><option>always</option></select></label>', '--dedup: judge one line per template (lines that differ only in ids, numbers, dates) and reuse the answer; auto does it when it pays')}
-${hg('unit', '<label>unit <select name="unit"><option>line</option><option>sentence-by-jev</option><option>sentence-by-rule</option></select></label>', '--unit: what one question judges: a line, or a sentence (found by Jev or by a rule)')}
+${hg('unit', '<label>unit <select name="unit"><option>line</option><option>sentence-by-jev</option><option>sentence-by-rule</option><option>function</option></select></label>', '--unit: what one question judges: a line, a sentence (found by Jev or by a rule), or a function (git grep -W\'s boundaries). A multi-step walk is by function regardless of this. zero (-z, same as --unit=zero) is refused here, like -z itself')}
 ${hg('include', '<label>--include <input name="include"></label>', '--include: only file names matching these globs, space separated. Applies to -r and git sys1grep; it narrows the launch targets, never widens them')}${hg('exclude', '<label>--exclude <input name="exclude"></label>', '--exclude: not file names matching these globs, space separated. Applies to -r and git sys1grep')}
 ${hg('changed', '<label>--changed-within <input name="changed-within" placeholder="2h, 7d, a date"></label>', '--changed-within: only files modified within 30m, 2h, 7d, 2w, or since a date. Applies to -r and git sys1grep')}${hg('g', '<label class="chk"><input type="checkbox" name="g"> -g git log</label>', '-g: search git log\'s commits, one record each')}
 </div></details></form>
