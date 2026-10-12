@@ -45,3 +45,7 @@ The five default labels: needs-triage, needs-info, ready-for-agent, ready-for-hu
 ### Domain docs
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Worktrees
+
+An unneeded worktree may be removed without asking. Unneeded means its changes are all committed and its commits are reachable from a branch or a merged PR. Use `git worktree remove` without `--force`, so git refuses a dirty one. Keep a worktree that has uncommitted changes, or detached commits no branch contains.
