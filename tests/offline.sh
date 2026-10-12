@@ -2086,6 +2086,12 @@ code 2 "--serve refuses -e" -- $J --serve -e cat "$F"
 code 2 "--serve refuses --format" -- $J --serve --format=html "$F"
 code 2 "--serve refuses --step-to at launch" -- limit $J --serve --step-to cat "$F"
 code 2 "--serve refuses --step-reverse-to at launch" -- limit $J --serve --step-reverse-to cat "$F"
+# #233 follow-up: --unit=zero is -z's output shape, refused at launch like -z itself; --unit takes its value split too.
+# limit: an unrefused --serve would otherwise listen and hang the suite instead of failing fast (a regression was
+# seen to run ~8 minutes here before this guard was added)
+code 2 "--serve refuses --unit=zero at launch" -- limit $J --serve --unit=zero "$F"
+code 2 "--serve refuses --unit zero (split) at launch" -- limit $J --serve --unit zero "$F"
+eq "$(limit $J --serve --unit=zero "$F" 2>&1 | head -1)" "sys1grep: --serve: --unit=zero is not for --serve (it is -z's output shape, already refused there)" "--serve --unit=zero: says why"
 for o in --reverse --no-reverse; do
   eq "$(limit $J --serve $o "$F" 2>&1 | head -1)" "sys1grep: --reverse was replaced by --step-reverse-to" "--serve $o: says what replaced it, at launch"
 done

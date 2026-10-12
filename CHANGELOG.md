@@ -6,6 +6,11 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--serve`: the `unit` select in Details also offers `function` (#233), matching `--unit=function`'s CLI set
+  (`line` / `sentence-by-jev` / `sentence-by-rule` / `function`; `zero` stays out, it's `-z`, refused on purpose).
+  A launch's `--unit=function` no longer turns into `--unit=line` once multi-step is on: the control used to force
+  itself back to `line` there, which broke a walk (sys1grep.mjs's own "needs `--edges`" refusal) instead of leaving
+  the launch's unit, or the walk's own function default, in effect.
 - `--summarize=ask` (#229): the lines print as usual, then, on a terminal, `Summarize these matches? [y/N]`; `y`
   summarizes the lines just printed with the TOOL of a bare `--summarize`, with no second search. No terminal, or
   stdout not one: no question. `-y` summarizes unasked; `-q` and `--dry-run` never ask; the exit status is the search's.
