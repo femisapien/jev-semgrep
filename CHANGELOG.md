@@ -6,6 +6,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--summarize=ask` (#229): the lines print as usual, then, on a terminal, `Summarize these matches? [y/N]`; `y`
+  summarizes the lines just printed with the TOOL of a bare `--summarize`, with no second search. No terminal, or
+  stdout not one: no question. `-y` summarizes unasked; `-q` and `--dry-run` never ask; the exit status is the search's.
 - `--serve`: checking `summarize` while results are on screen asks whether to summarize those results as they are
   (#227). OK posts the text on screen back and only the summarizer runs on it (no search, nothing sent to Jev, at most
   200 KB); Not now leaves the box checked for the next Search; a field or option changed since the results came is

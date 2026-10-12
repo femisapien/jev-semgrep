@@ -201,7 +201,7 @@ export const initOf = launch => {
   const rank = o.rank === undefined || o.rank === '\0' ? '' : ['jev', 'match'].includes(o.rank) ? o.rank : 'jev'; // a bare --rank swallows the next word
   return { x: [], rank, level: o.level ?? 'normal', t: o.t ?? '', T: o.T ?? '', C: o.C ?? '', dedup: o.dedup ?? 'never', unit: o.unit ?? 'line',
     'auto-scope': o['auto-scope'] ?? true, n: !!o.n, p: !!o.p, g: !!o.g, include: (o.include ?? []).join(' '), exclude: (o.exclude ?? []).join(' '),
-    'changed-within': o['changed-within'] ?? '', hops: o.hops ?? '0..', reverse: false, summarize: o.summarize !== undefined && o.summarize !== '\0',
+    'changed-within': o['changed-within'] ?? '', hops: o.hops ?? '0..', reverse: false, summarize: o.summarize !== undefined && o.summarize !== '\0' && o.summarize !== 'ask', // ask: the lines, unasked off a terminal
     'summarize-prompt': '' };
 };
 
