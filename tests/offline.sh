@@ -1947,18 +1947,24 @@ head -c 204801 /dev/zero | tr '\0' a >"$tmp/sp.big"
 eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H "$ST" --data-binary @"$tmp/sp.big") $(field j.error <"$tmp/sp.out")" '413 "the results on screen are more than 200 KB to summarize; narrow the search"' "--serve summarize: an oversized body is refused, saying why"
 node -e "process.stdout.write('あ'.repeat(70000))" >"$tmp/sp.big" # 70,000 characters, 210,000 bytes: the bound is in bytes
 eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H "$ST" --data-binary @"$tmp/sp.big")" "413" "--serve summarize: the bound counts bytes, not characters"
-# far over the bound, from a client that sends the whole body before it reads (as a browser's fetch may): the 413 comes
-# and the connection closes, so the upload ends at once instead of stalling against a request the server stopped reading
+# far over the bound, from a client that sends the whole body before it reads (as a browser's fetch may): the 413 and
+# its reason reach it, three times running. A request left unread stalls the upload; one closed under the answer
+# resets it on Linux before the answer is read (#232 CI, node 22)
 eq "$(node --input-type=module -e "
 import { request } from 'node:http';
 const [base, token] = process.argv.slice(1), u = new URL('summarize?x=e:helper', base);
-let status = 'none';
-const req = request(u, { method: 'POST', headers: { 'x-sys1grep-token': token, origin: u.origin, 'content-type': 'text/plain' } }, res => { status = res.statusCode; res.resume(); });
-const t = setTimeout(() => { console.log('still sending after 10 s, ' + status); process.exit(0); }, 10000);
-const done = () => { clearTimeout(t); console.log('ended, ' + status); };
-req.on('error', done).on('finish', done);
-req.end(Buffer.alloc(20e6, 97));
-" "$BASE" "$K")" "ended, 413" "--serve summarize: 20 MB is refused and the upload ends at once"
+const once = () => new Promise(done => {
+  const t = setTimeout(() => done('no answer after 10 s'), 10000);
+  const req = request(u, { method: 'POST', headers: { 'x-sys1grep-token': token, origin: u.origin, 'content-type': 'text/plain' } }, res => {
+    let b = '';
+    res.setEncoding('utf8').on('data', c => { b += c; }).on('end', () => { clearTimeout(t); done(res.statusCode + ' ' + JSON.parse(b).error); });
+  });
+  req.on('error', e => { clearTimeout(t); done('reset before the answer (' + e.code + ')'); });
+  req.end(Buffer.alloc(20e6, 97));
+});
+for (let i = 0; i < 3; i++) console.log(await once());
+process.exit(0);
+" "$BASE" "$K" | sort | uniq -c | sed 's/^ *//')" "3 413 the results on screen are more than 200 KB to summarize; narrow the search" "--serve summarize: 20 MB is refused, and the 413 with its reason reaches a client that sends it all first"
 rm -f "$HS"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # two --serve (npm run serve adds one): the last one's port is used and neither reaches the child

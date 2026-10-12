@@ -93,12 +93,16 @@ const saveSettings = patch => {
   }
   writeSettings(next);
 };
-// the summary's bound in sys1grep (SUMMARY_MAX): results on screen beyond it are refused before they are read in full
+// the summary's bound in sys1grep (SUMMARY_MAX): results on screen beyond it are refused
 const POSTED_MAX = 200 * 1024;
 const body = (req, max = 1 << 16) => new Promise((resolve, reject) => {
   let b = '', n = 0;
   req.setEncoding('utf8');
-  req.on('data', c => { b += c; n += Buffer.byteLength(c); if (n > max) { req.tooLarge = true; reject(new Error('too large')); req.pause(); } });
+  // Past max the rest is read and dropped, not left unread: a client that sends the whole body before it reads gets the
+  // answer (413) once it is done, where an unread or closed request either stalls it or resets the connection under
+  // the answer (Linux drops data not yet read when a reset arrives).
+  const take = c => { b += c; n += Buffer.byteLength(c); if (n > max) { req.tooLarge = true; b = ''; req.off('data', take).on('data', () => {}); reject(new Error('too large')); } };
+  req.on('data', take);
   req.on('end', () => resolve(b));
   req.on('error', reject);
 });
@@ -294,10 +298,8 @@ export function serve(argv) {
   const server = createServer(async (req, res) => {
     const host = req.headers.host;
     const send = (code, type, body) => {
-      // a body refused unread (too large): the answer goes out, then the connection closes, or the client keeps
-      // uploading into a paused request until Node's request timeout (5 minutes)
-      res.writeHead(code, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store', 'x-frame-options': 'DENY', ...(type === 'application/json' ? { 'x-content-type-options': 'nosniff' } : {}), ...(req.tooLarge ? { connection: 'close' } : {}) });
-      res.end(body, () => { if (req.tooLarge) req.destroy(); });
+      res.writeHead(code, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store', 'x-frame-options': 'DENY', ...(type === 'application/json' ? { 'x-content-type-options': 'nosniff' } : {}) });
+      res.end(body);
     };
     // req.url can be something new URL() rejects outright (a bare "//..." parses as scheme-relative and throws
     // ERR_INVALID_URL): answered before any check below, not left to crash the process (an uncaughtException, #166).
