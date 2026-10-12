@@ -24,6 +24,7 @@ class El {
   append(...xs) { for (const x of xs) { x.parent = this; this.children.push(x); } }
   remove() { this.parent.children.splice(this.parent.children.indexOf(this), 1); }
   get firstChild() { return this.children[0]; }
+  querySelector(tag) { for (const c of this.children) { const m = c.tagName === tag ? c : c.querySelector(tag); if (m) return m; } return null; } // a tag name only
   get parentElement() { return this.parent; }
   get lastChild() { return this.children.at(-1); }
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); }
@@ -45,7 +46,7 @@ class El {
   // no layout engine here: by default a hidden (zero-width) box, so clampHint() leaves a hint alone; a test that
   // drives the clamp sets rect, or a function of the element's inline style for a box that moves when restyled.
   getBoundingClientRect() { return typeof this.rect === 'function' ? this.rect(this.style) : this.rect ?? { left: 100, right: 100, top: 0, bottom: 0, width: 0, height: 0 }; }
-  get textContent() { return this.text; }
+  get textContent() { return text(this); } // a browser's: the text of every descendant
   set textContent(t) { this.children = []; this.text = t; }
   set innerHTML(h) { this.children = []; for (const [, t, a] of h.matchAll(/<(select|input|button)(\s[^>]*)?>/g)) this.append(new El(t, a ?? '')); }
 }
@@ -146,7 +147,7 @@ byId.f.elements = byId.sf.elements = elements;
   console.log(`a label with a "?" no longer also carries a duplicate title=: step ${noTitle('step') ? 'ok' : 'FAIL'}, rank ${noTitle('rank') ? 'ok' : 'FAIL'}, summarize ${noTitle('summarize') ? 'ok' : 'FAIL'}`);
   console.log(`--hops keeps its own title= (not a duplicate): ${elements.hops.parent.getAttribute('title') !== undefined ? 'ok' : 'FAIL'}`);
 }
-const sent = [];
+const sent = [], posts = [];
 const document = {
   getElementById: id => byId[id] ?? null, createElement: t => new El(t), activeElement: null, ls: {}, body: new El('body'), documentElement: { clientWidth: 1000, clientHeight: 800 },
   addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); },
@@ -156,7 +157,7 @@ const page = fetch, ctx = vm.createContext({
   document, setTimeout, URLSearchParams, AbortController, console, navigator: {}, window: { ls: {}, addEventListener(t, fn) { (this.ls[t] ??= []).push(fn); } },
   getComputedStyle: el => ({ position: el.position ?? 'absolute' }),
   // a browser adds Origin to a POST; Node's fetch does not
-  fetch: (path, o) => { sent.push(new URL(path, U).searchParams); return page(new URL(path, U), o?.method === 'POST' ? { ...o, headers: { ...o.headers, origin: new URL(U).origin } } : o); },
+  fetch: (path, o) => { sent.push(new URL(path, U).searchParams); if (o?.method === 'POST') posts.push([new URL(path, U).pathname, o.body]); return page(new URL(path, U), o?.method === 'POST' ? { ...o, headers: { ...o.headers, origin: new URL(U).origin } } : o); },
 });
 vm.runInContext(/<script>([\s\S]*)<\/script>/.exec(html)[1], ctx);
 console.log(`first start row: ${byId.fields.children[0].children.length} children (select, input, delete)`);
@@ -351,3 +352,43 @@ ctx.window.ls.resize.forEach(fn => fn());
 console.log(`a resize closes an open tooltip: rank ${byId['hg-rank'].classList.contains('open') ? 'open' : 'closed'}`);
 // #216: the targets are the launch's; nothing the page sent named one
 console.log(`no request carried a target: ${TARGETS.length && sent.length && sent.every(q => ![...q.values()].some(v => TARGETS.some(t => v.includes(t)))) ? 'ok' : 'FAIL'}`);
+
+// #227: checking summarize while results are on screen asks, inline, whether to summarize those results as they are.
+// No results, or multi-step: no question. Not now sends nothing and leaves the box checked; a field changed since the
+// search says the results are older; OK posts the text on screen to /summarize and sends no search.
+const askState = () => (byId.ask.hidden ? 'no question' : `"${byId.askq.textContent}" [${byId['ask-ok'].textContent} / ${byId['ask-no'].textContent}] (lang ${byId.ask.lang})`);
+const tick = on => { elements.summarize.checked = on; for (const fn of elements.summarize.ls.change ?? []) fn(); fire(); };
+const startOn = v => { byId.fields.children[0].firstChild.value = 'e'; byId.fields.children[0].children[1].value = v; fire(); };
+byId.step.checked = false;
+startOn('/zzzz/');
+await search();
+tick(true);
+console.log(`summarize, no results on screen: ${askState()}`);
+tick(false);
+startOn('/def main/');
+await search();
+const s0 = sent.length;
+tick(true);
+console.log(`summarize, results on screen: ${askState()}`);
+byId['ask-no'].onclick();
+console.log(`Not now: ${askState()}, box ${elements.summarize.checked ? 'checked' : 'unchecked'}, ${sent.length - s0} sent`);
+tick(false);
+tick(true);
+startOn('/helper/');
+console.log(`a field changed since: ${askState()}`);
+byId['ex-ja'].onclick();
+console.log(`日本語: ${askState()}`);
+byId['ex-en'].onclick();
+startOn('/def main/');
+console.log(`the field back as it was: ${askState()}`);
+byId.step.checked = true;
+fire();
+console.log(`multi-step on: ${askState()}`);
+byId.step.checked = false;
+fire();
+tick(false);
+tick(true);
+const s1 = sent.length, p1 = posts.length, shownText = text(byId.left);
+byId['ask-ok'].onclick();
+while (byId.go.disabled) await new Promise(r => setTimeout(r, 20));
+console.log(`OK: ${askState()}; sent ${posts.slice(p1).map(([p, b]) => `${p} with the results on screen ${b === shownText ? 'as they are' : 'FAIL: ' + JSON.stringify(b)}`)}, ${sent.length - s1} request(s) in all; summary pane ${byId.right.hidden ? 'hidden' : 'shown'}: ${JSON.stringify(text(byId.right))}`);
