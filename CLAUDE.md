@@ -48,4 +48,4 @@ Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/
 
 ## Worktrees
 
-An unneeded worktree may be removed without asking. Unneeded means its changes are all committed and its commits are reachable from a branch or a merged PR. Use `git worktree remove` without `--force`, so git refuses a dirty one. Keep a worktree that has uncommitted changes, or detached commits no branch contains.
+An unneeded worktree may be removed without asking. Unneeded means its PR is merged or closed and no session is working in it (check the session list; the pstack worktree-cleanup playbook's audit script lists merge state, PR state and the last chat per worktree). Use `git worktree remove` without `--force`, so git refuses a dirty one. Keep a worktree that has uncommitted changes, or commits that no branch and no merged PR contains.
