@@ -216,6 +216,11 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
   (units, templates, requests, tokens) for every `--dedup` value.
 
 ### Changed
+- `--serve`: Search with `summarize` checked now runs the search once (#231): once the results arrive, the page
+  summarizes them the way #227's OK does (POSTs the text on screen to `/summarize`; only the summarizer runs, nothing
+  more goes to Jev). Before, Search sent `results` and a whole second search with `--summarize --format=plain`, which
+  could describe different matches from the ones on screen (#193) and paid Jev twice; the startup notice about that
+  second request is gone.
 - `--serve`'s examples also find something when it is started on this repository (#224): the multi-step ones start
   at a module's entry points (`export function`, `export const f = (...) =>`, `function main`, Python's `def main`),
   end at `throw` / `raise` and `process.exit(` / `sys.exit(`, and walk source files only (`*.mjs *.cjs *.js *.jsx *.ts *.tsx *.py`);

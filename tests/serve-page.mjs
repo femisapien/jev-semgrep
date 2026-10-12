@@ -49,6 +49,19 @@ class El {
   get textContent() { return text(this); } // a browser's: the text of every descendant
   set textContent(t) { this.children = []; this.text = t; }
   set innerHTML(h) { this.children = []; for (const [, t, a] of h.matchAll(/<(select|input|button)(\s[^>]*)?>/g)) this.append(new El(t, a ?? '')); }
+  // an <iframe>'s srcdoc loads asynchronously, as a real browser's does (the page awaits onload before reading its
+  // text, #231): contentDocument stays unset until a later task fires onload (a macrotask, not a microtask, so a
+  // caller that merely queues a .then() without awaiting show1's own promise still runs first and sees it empty),
+  // with the srcdoc's own text (tags stripped) as its body.
+  set srcdoc(h) {
+    this._srcdoc = h;
+    setTimeout(() => {
+      this._contentDocument = { body: { innerText: h.replace(/<[^>]*>/g, '') }, documentElement: { scrollHeight: h.length } };
+      this.onload?.();
+    }, 0);
+  }
+  get srcdoc() { return this._srcdoc; }
+  get contentDocument() { return this._contentDocument; }
 }
 // A real (parent/children) tree for the static markup, built by a small open/close stack over the HTML up to
 // <script> (the script's own string literals hold tag-like text -- '<select>...', the close-icon svg -- that would
@@ -392,3 +405,24 @@ const s1 = sent.length, p1 = posts.length, shownText = text(byId.left);
 byId['ask-ok'].onclick();
 while (byId.go.disabled) await new Promise(r => setTimeout(r, 20));
 console.log(`OK: ${askState()}; sent ${posts.slice(p1).map(([p, b]) => `${p} with the results on screen ${b === shownText ? 'as they are' : 'FAIL: ' + JSON.stringify(b)}`)}, ${sent.length - s1} request(s) in all; summary pane ${byId.right.hidden ? 'hidden' : 'shown'}: ${JSON.stringify(text(byId.right))}`);
+
+// #231: Search itself, with summarize already checked, runs the search once and summarizes the results it gets: one
+// `results` request, then one `/summarize` POST over the text on screen, and no second (whole-search) `summary`
+// request -- so `posts` gains exactly one entry, not zero (the old two-GET shape left posts untouched).
+const s2 = sent.length, p2 = posts.length;
+console.log(await search());
+const shown2 = text(byId.left);
+console.log(`Search with summarize on: ${sent.length - s2} request(s), ${posts.length - p2} POST(s) ${posts.slice(p2).map(([p, b]) => `${p} with the results on screen ${b === shown2 ? 'as they are' : 'FAIL: ' + JSON.stringify(b)}`)}; summary pane ${byId.right.hidden ? 'hidden' : 'shown'}: ${JSON.stringify(text(byId.right))}`);
+
+// #231, rank on: the left pane is an iframe whose srcdoc loads asynchronously; the page must wait for it before
+// posting, so the summarizer gets the cards' text, not an empty (not-yet-loaded) body. rank needs a meaning, not
+// the regex this file's fields otherwise carry, so the start field switches to one here.
+startOn('helper');
+elements.rank.value = 'jev';
+fire();
+const s3 = sent.length, p3 = posts.length;
+console.log(await search());
+const cardsText = byId.left.querySelector('iframe').contentDocument.body.innerText;
+console.log(`Search with summarize on, rank on: ${sent.length - s3} request(s), ${posts.length - p3} POST(s) ${posts.slice(p3).map(([p, b]) => `${p} with the cards' text ${b === cardsText ? 'as they are' : 'FAIL: ' + JSON.stringify(b)}`)}; summary pane ${byId.right.hidden ? 'hidden' : 'shown'}: ${JSON.stringify(text(byId.right))}`);
+elements.rank.value = '';
+fire();

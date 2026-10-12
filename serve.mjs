@@ -261,7 +261,6 @@ export function serve(argv) {
   const secret = key === undefined ? [] : [`--sys1-api-key=${key}`];
   const cli = { url: lift(launch, 'sys1-url')[1], model: lift(launch, 'sys1-model')[1], key };
   const token = randomBytes(16).toString('hex');
-  const summarizeAsked = init.summarize;
   const script = process.argv[1];
   // #222: a folder searched without -r fails every search ("Is a directory (use -r)"), so refuse it before listening.
   // Whether -r is in effect is asked of sys1grep itself (SYS1GREP_PROBE), so -r from SYS1GREP_OPTS or settings.json
@@ -284,11 +283,11 @@ export function serve(argv) {
   });
 
   const search = async (p, kind, signal) => {
-    const pk = { ...p, summarize: kind === 'summary' }, step = (p.x).some(f => f[0] === 'S');
-    const args = toArgv(pk, init);
+    // a results search never carries --summarize: the summary is a separate step, over what's on screen (#231, /summarize below)
+    const step = (p.x).some(f => f[0] === 'S');
+    const args = toArgv({ ...p, summarize: false }, init);
     if (kind === 'dry') args.push('--dry-run', '--no-summarize');
-    else if (kind === 'summary') args.push('--format=plain');
-    else if (!step && (pk.rank ?? init.rank)) args.push('--format=html', ...tpl);
+    else if (!step && (p.rank ?? init.rank)) args.push('--format=html', ...tpl);
     const { code, out, err } = await run([`--color=${kind === 'results' ? 'always' : 'never'}`, ...args], signal);
     if (code > 1) return { error: err.trim() || `exit ${code}` };
     if (code === 1 && !out) return { none: true, note: err.trim() };
@@ -348,7 +347,7 @@ export function serve(argv) {
       return answer(200, code ? { error: err.trim() || `exit ${code}` } : { text: out });
     }
     const kind = url.pathname.slice(1);
-    if (!['results', 'summary', 'dry'].includes(kind) || ['cross-site', 'same-site'].includes(req.headers['sec-fetch-site'])) return send(404, 'text/plain', 'not found');
+    if (!['results', 'dry'].includes(kind) || ['cross-site', 'same-site'].includes(req.headers['sec-fetch-site'])) return send(404, 'text/plain', 'not found');
     const p = fromQuery(url.searchParams, init);
     if (!p) return send(400, 'text/plain', 'bad value');
     const ac = new AbortController();
@@ -358,7 +357,6 @@ export function serve(argv) {
   server.on('error', e => { console.error(`sys1grep: --serve: ${e.message}`); process.exit(2); });
   server.listen(Number(port) || 0, '127.0.0.1', () => {
     console.log(`http://127.0.0.1:${server.address().port}/?k=${token}`);
-    if (summarizeAsked) console.error('sys1grep: --serve: the summary runs the search again, one more request per search');
   });
 }
 
@@ -558,21 +556,30 @@ const get = async (kind, p, into, post) => {
   running++;
   try {
     const r = await fetch('/' + kind + '?' + query(p), { ...post, signal: ctl.signal }), j = await r.json().catch(() => ({ error: 'bad answer' }));
-    if (mine === gen) show1(j, into);
+    if (mine === gen) await show1(j, into); // an html result's iframe loads async; wait for it, so the caller's text is ever the shown text (#231)
     if (mine === gen && kind === 'results' && (j.text || j.html) && !p.x.some(x => x[0] === 'S')) onScreen = p;
+    return j;
   } catch (e) {
     if (mine === gen) show1({ error: String(e) }, into);
+    return { error: String(e) };
   } finally {
     running = Math.max(0, running - 1);
     if (running === 0 && mine === gen) busy(false);
   }
 };
+// returns a promise that resolves once into holds the shown content: immediately, except for an iframe (j.html),
+// whose srcdoc loads asynchronously -- a caller that reads the shown text (the summarize POST, #231) must await it.
 const show1 = (j, into) => {
   into.textContent = '';
-  if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; into.append(e); }
-  else if (j.none) { const e = document.createElement('div'); e.className = 'note'; e.textContent = 'no matches' + (j.note ? ' (' + j.note + ')' : ''); into.append(e); }
-  else if (j.html) { const i = document.createElement('iframe'); i.sandbox = 'allow-same-origin'; i.srcdoc = j.html; i.onload = () => { i.style.height = i.contentDocument.documentElement.scrollHeight + 'px'; }; into.append(i); }
-  else { const e = document.createElement('pre'); e.className = 'out'; ansi(j.text, e); into.append(e); }
+  if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; into.append(e); return; }
+  if (j.none) { const e = document.createElement('div'); e.className = 'note'; e.textContent = 'no matches' + (j.note ? ' (' + j.note + ')' : ''); into.append(e); return; }
+  if (j.html) {
+    const i = document.createElement('iframe'); i.sandbox = 'allow-same-origin'; i.srcdoc = j.html;
+    const ready = new Promise(r => { i.onload = () => { i.style.height = i.contentDocument.documentElement.scrollHeight + 'px'; r(); }; });
+    into.append(i);
+    return ready;
+  }
+  const e = document.createElement('pre'); e.className = 'out'; ansi(j.text, e); into.append(e);
 };
 document.getElementById('stop').onclick = () => {
   ctl.abort(); gen++; running = 0; busy(false);
@@ -589,8 +596,20 @@ const run = kind => {
   const sum = kind === 'results' && p.summarize && !p.x.some(x => x[0] === 'S');
   document.getElementById('m').className = sum ? 'two' : '';
   right.hidden = !sum; right.textContent = sum ? 'summarizing...' : '';
-  get(kind, p, left);
-  if (sum) get('summary', p, right);
+  const mine = gen;
+  // #231: one search, not two. Reserve the summarize step's slot so busy(false) does not fire in the gap between the
+  // results arriving and the summarize request starting; get('summarize', ...) below takes over the reservation (both
+  // happen in the same synchronous turn, so running never drops to 0 in between).
+  if (sum) running++;
+  get(kind, p, left).then(j => {
+    if (!sum) return;
+    if (mine !== gen) { running = Math.max(0, running - 1); return; }
+    if (!(j.text || j.html)) { show1(j, right); running = Math.max(0, running - 1); if (running === 0) busy(false); return; }
+    running--;
+    const frame = left.querySelector('iframe');
+    const text = frame ? frame.contentDocument.body.innerText : left.textContent;
+    get('summarize', { ...p, 'summarize-prompt': read()['summarize-prompt'] }, right, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: text });
+  });
 };
 const go = () => run('results');
 // #227: checking summarize while results are on screen asks whether to summarize those results as they are. OK posts
