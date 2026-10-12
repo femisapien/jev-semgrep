@@ -124,12 +124,23 @@ const CONTROLS = [
   { k: 'reverse', bool: true, step: true, def: false },
 ];
 const FIELD = /^[eavQS]:/; // an expression field: e:MEANING (-e), a, v, Q (-Q), S: (--step-to)
-// The example buttons, each from README, docs/use-cases.md or --help: x as the page sends it, then the controls it sets (by k).
+// The example buttons: x as the page sends it, then the controls it sets (by k). Each fits a user's own project and also
+// has something to find when --serve is started on this repository (#224): the meaning ones in the corpora under tests/
+// or sys1grep's own code, the multi-step ones in its JavaScript (ENTRY and RETHROW take Python too; SRC keeps the walk
+// in source files).
 // hj / xj: the label and fields in Japanese (#215), for the page's EN / 日本語 switch; a regex example keeps its x.
 // Pressing one puts the page in that state: the rest go back to their launch values; an S: in x turns multi-step on.
-const EXAMPLES = [
+const ENTRY = '/^export (async )?function |^export const [\\w$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/'; // a module's entry points
+// a caught error thrown on: any throw would put the entry points (which throw) at both ends, with no walk between; m: a
+// walk matches a whole function at once, and ^ $ must mean a line in it (#225 review)
+const RETHROW = '/throw (e|err|error)\\b|^ *raise$/m';
+const SRC = '*.mjs *.cjs *.js *.jsx *.ts *.tsx *.py'; // not *.mts: tests/smoke.mts would put its search() in the walk
+export const EXAMPLES = [
   { h: 'meaning, not words', hj: '言葉ではなく意味で', x: ['e:customer is angry or frustrated'], xj: ['e:顧客が怒っている、または不満を持っている'], n: true },
   { h: 'a question (-Q)', hj: '質問する (-Q)', x: ['Q:whether the server is down'], xj: ['Q:サーバーが落ちているかどうか'], n: true },
+  { h: 'where an API key is read', hj: 'API キーを読んでいる箇所', x: ['e:an API key or token is read from the environment or a settings file'],
+    xj: ['e:API キーやトークンを環境変数や設定ファイルから読んでいる'], n: true },
+  { h: 'a request is retried', hj: 'リクエストの再試行', x: ['e:a failed request is retried'], xj: ['e:失敗したリクエストを再試行している'], n: true },
   { h: 'either meaning, with scores (-p)', hj: 'どちらかの意味（スコア付き -p）', x: ['e:customer is asking for a refund', 'e:delivery address change request'],
     xj: ['e:顧客が返金を求めている', 'e:配送先の変更依頼'], n: true, p: true },
   { h: 'exclude with -v', hj: '-v で除外', x: ['e:network or remote connection failure', 'v:a retry is happening or was attempted'],
@@ -139,14 +150,14 @@ const EXAMPLES = [
     xj: ['e:セキュリティ上のリスク、または危険な破壊的操作'], level: 'strict', n: true },
   { h: 'one line per template (--dedup)', hj: 'テンプレートごとに1行 (--dedup)', x: ['e:a request failed'], xj: ['e:リクエストが失敗した'], dedup: 'always', n: true },
   { h: 'one sentence at a time', hj: '1文ずつ判定', x: ['e:the author admits they made a mistake'], xj: ['e:筆者が自分の間違いを認めている'], unit: 'sentence-by-jev', n: true },
-  { h: 'calls that raise', hj: 'raise に至る呼び出し', x: ['e:/^ *def main/', 'S:', 'e:/raise /'] },
-  { h: '1 to 2 calls away', hj: '1〜2 段先の呼び出し', x: ['e:/^ *def main/', 'S:', 'e:/raise /'], hops: '1..2' },
-  { h: 'who calls it (--step-reverse-to)', hj: '呼び出し元は誰か (--step-reverse-to)', x: ['e:/^ *def helper/', 'S:', 'e:/^ *def main/'], reverse: true },
-  { h: 'raise or exit (two ends)', hj: 'raise または exit（終点が2つ）', x: ['e:/^ *def main/', 'S:', 'e:/raise /', 'e:/sys\\.exit/'] },
+  { h: 'calls that throw or raise', hj: 'throw / raise に至る呼び出し', x: ['e:' + ENTRY, 'S:', 'e:/throw |raise /'], include: SRC },
+  { h: '1 to 2 calls away', hj: '1〜2 段先の呼び出し', x: ['e:' + ENTRY, 'S:', 'e:/throw |raise /'], hops: '1..2', include: SRC },
+  { h: 'what reaches it (--step-reverse-to)', hj: 'どこから呼ばれるか (--step-reverse-to)', x: ['e:' + RETHROW, 'S:', 'e:' + ENTRY], reverse: true, include: SRC },
+  { h: 'throw or exit (two ends)', hj: 'throw または exit（終点が2つ）', x: ['e:' + ENTRY, 'S:', 'e:/throw |raise /', 'e:/process\\.exit\\(|sys\\.exit\\(/'], include: SRC },
 ];
 
 // p: the page's values (x: the fields, then one value per control and summarize / summarize-prompt); init: the launch's.
-const toArgv = (p, init) => {
+export const toArgv = (p, init) => {
   const v = k => p[k] ?? init[k], out = [];
   const step = (p.x ?? init.x).some(f => f[0] === 'S');
   for (const f of v('x')) {
@@ -171,7 +182,7 @@ const toArgv = (p, init) => {
   return out;
 };
 // The launch's values, from the command line (what parseArgs cannot place is left at the default).
-const initOf = launch => {
+export const initOf = launch => {
   const fill = { '--rank': '--rank=jev', '--summarize': '--summarize=x', '--dedup': '--dedup=always', '--no-rank': '--rank=\0', '--no-summarize': '--summarize=\0' };
   const { values: o } = parseArgs({
     args: launch.map(a => fill[a] ?? a), strict: false, allowPositionals: true, allowNegative: true,
