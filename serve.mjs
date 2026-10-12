@@ -556,7 +556,7 @@ const get = async (kind, p, into, post) => {
   running++;
   try {
     const r = await fetch('/' + kind + '?' + query(p), { ...post, signal: ctl.signal }), j = await r.json().catch(() => ({ error: 'bad answer' }));
-    if (mine === gen) show1(j, into);
+    if (mine === gen) await show1(j, into); // an html result's iframe loads async; wait for it, so the caller's text is ever the shown text (#231)
     if (mine === gen && kind === 'results' && (j.text || j.html) && !p.x.some(x => x[0] === 'S')) onScreen = p;
     return j;
   } catch (e) {
@@ -567,12 +567,19 @@ const get = async (kind, p, into, post) => {
     if (running === 0 && mine === gen) busy(false);
   }
 };
+// returns a promise that resolves once into holds the shown content: immediately, except for an iframe (j.html),
+// whose srcdoc loads asynchronously -- a caller that reads the shown text (the summarize POST, #231) must await it.
 const show1 = (j, into) => {
   into.textContent = '';
-  if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; into.append(e); }
-  else if (j.none) { const e = document.createElement('div'); e.className = 'note'; e.textContent = 'no matches' + (j.note ? ' (' + j.note + ')' : ''); into.append(e); }
-  else if (j.html) { const i = document.createElement('iframe'); i.sandbox = 'allow-same-origin'; i.srcdoc = j.html; i.onload = () => { i.style.height = i.contentDocument.documentElement.scrollHeight + 'px'; }; into.append(i); }
-  else { const e = document.createElement('pre'); e.className = 'out'; ansi(j.text, e); into.append(e); }
+  if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; into.append(e); return; }
+  if (j.none) { const e = document.createElement('div'); e.className = 'note'; e.textContent = 'no matches' + (j.note ? ' (' + j.note + ')' : ''); into.append(e); return; }
+  if (j.html) {
+    const i = document.createElement('iframe'); i.sandbox = 'allow-same-origin'; i.srcdoc = j.html;
+    const ready = new Promise(r => { i.onload = () => { i.style.height = i.contentDocument.documentElement.scrollHeight + 'px'; r(); }; });
+    into.append(i);
+    return ready;
+  }
+  const e = document.createElement('pre'); e.className = 'out'; ansi(j.text, e); into.append(e);
 };
 document.getElementById('stop').onclick = () => {
   ctl.abort(); gen++; running = 0; busy(false);

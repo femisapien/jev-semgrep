@@ -1763,7 +1763,8 @@ eq "$(curl -s "$U" | grep -c 'SUGGEST = \[{"h":"why is it slow","x":\["Q:why is 
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt (and SYS1GREP_SUMMARIZE in --serve's environment, not passed on)"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
-# a launch --summarize=ask: results are the lines (nothing asked, no terminal), the summary pane summarizes; a launch TOOL stays the pane's
+# a launch --summarize=ask: results are the lines (nothing asked, no terminal); /summarize (#231: over the results on
+# screen, not a second search) still runs the launch's own TOOL, ask's bare summarizer or a launch TOOL alike
 printf '%s\n' '#!/bin/sh' 'cat >/dev/null' 'echo LLMSUMMARY' >"$tmp/bin/llm"; chmod +x "$tmp/bin/llm"
 for launch in --summarize=ask --summarize=llm; do
   $E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve $launch "$F" >"$tmp/serve7.url" 2>/dev/null &
@@ -1771,7 +1772,7 @@ for launch in --summarize=ask --summarize=llm; do
   i=0; while [ ! -s "$tmp/serve7.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve $launch did not start"; sleep 0.05; done
   U=$(cat "$tmp/serve7.url"); BASE=${U%%\?*} K=${U#*k=}
   want=SUMMARY; [ $launch = --summarize=ask ] || want=LLMSUMMARY
-  eq "$(curl -s "${BASE}summary?k=$K&x=e:cat&rank=&summarize=1" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.text || j.error).trim()")" "$want" "--serve $launch: the summary pane"
+  eq "$(curl -s -X POST -H "x-sys1grep-token: $K" -H "Origin: ${BASE%/}" -H 'content-type: text/plain' --data-binary 'cat' "${BASE}summarize?x=e:cat&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.text || j.error).trim()")" "$want" "--serve $launch: /summarize over the results on screen"
   eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.text || j.error" | grep -c cat)" "2" "--serve $launch: results are the lines"
   kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve7.url"
 done
@@ -1927,7 +1928,9 @@ the field back as it was: \"Summarize the results on screen as they are?\" [OK /
 multi-step on: no question
 OK: no question; sent /summarize with the results on screen as they are, 1 request(s) in all; summary pane shown: \"SUMMARY\\n\"
 x=e:/def main/ hops=0.. reverse=1 -> 1 lines
-Search with summarize on: 2 request(s), 1 POST(s) /summarize with the results on screen as they are; summary pane shown: \"SUMMARY\\n\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
+Search with summarize on: 2 request(s), 1 POST(s) /summarize with the results on screen as they are; summary pane shown: \"SUMMARY\\n\"
+x=e:helper hops=0.. reverse=1 -> 0 lines
+Search with summarize on, rank on: 2 request(s), 1 POST(s) /summarize with the cards' text as they are; summary pane shown: \"SUMMARY\\n\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 # #224: every example that needs no Jev (regexes only, the multi-step ones) walks at least one call, with the arguments the
 # page sends, on this repository and on a small Python program: a line at hop 1 or more (not only a start that is also
