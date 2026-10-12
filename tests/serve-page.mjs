@@ -241,7 +241,7 @@ byId.step.checked = false;
 fire();
 example('throw or exit (two ends)');
 console.log(`on ${byId.step.checked}, ${byId.ends.children.length} ends, ${state()}`);
-example('who reaches it (--step-reverse-to)');
+example('what reaches it (--step-reverse-to)');
 console.log(`on ${byId.step.checked}, ${byId.ends.children.length} ends, ${state()}`);
 console.log(await search());
 const sentBefore = sent.length;
@@ -255,7 +255,7 @@ console.log(`groups: ${byId.ex.children.map(b => (b.tagName === 'button' ? 'b' :
 const n0 = sent.length;
 for (const b of pills) b.onclick();
 console.log(`pressing every example sends ${sent.length - n0}`);
-example('who reaches it (--step-reverse-to)');
+example('what reaches it (--step-reverse-to)');
 example('exclude with -v');
 console.log(`on ${byId.step.checked}, ${state()}`);
 console.log(await search());
@@ -277,7 +277,7 @@ const n1 = sent.length;
 console.log(`examples ${exState()}`);
 byId['ex-ja'].onclick();
 console.log(`examples ${exState()}`);
-for (const h of ['言葉ではなく意味で', '-v で除外', 'どこから至るか (--step-reverse-to)']) {
+for (const h of ['言葉ではなく意味で', '-v で除外', 'どこから呼ばれるか (--step-reverse-to)']) {
   byId.ex.children.find(b => b.textContent === h).onclick();
   console.log(`${h}: ${state()}`);
 }

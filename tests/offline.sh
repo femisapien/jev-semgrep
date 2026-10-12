@@ -1807,9 +1807,9 @@ x=e:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
 steps hidden: -e '/def main/'
 x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
-on true, 2 ends, steps shown: -e '/^export (async )?function |^ *def main\\b/' --step-to -e '/throw |raise /' -e '/process\\.exit\\(|sys\\.exit\\(/'
-on true, 1 ends, steps shown: -e '/throw |raise /' --step-reverse-to -e '/^export (async )?function |^ *def main\\b/'
-x=e:/throw |raise /|S:|e:/^export (async )?function |^ *def main\\b/ hops=0.. reverse=1 -> 2 lines
+on true, 2 ends, steps shown: -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -e '/throw |raise /' -e '/process\\.exit\\(|sys\\.exit\\(/' --include='*.mjs' --include='*.js' --include='*.ts' --include='*.py'
+on true, 1 ends, steps shown: -e '/throw (e|err|error)\\b|^ *raise\$/' --step-reverse-to -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.js' --include='*.ts' --include='*.py'
+x=e:/throw (e|err|error)\\b|^ *raise\$/|S:|e:/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/ hops=0.. reverse=1 -> 1 lines
 empty end: Enter an end (--step-to)., 0 sent
 groups: [] b b b b b b b b b b b [multi-step] b b b b
 pressing every example sends 0
@@ -1826,15 +1826,15 @@ regex and meaning together: steps hidden: -e /catch/ -a 'the error is ignored' -
 stricter (--level strict): steps hidden: -e 'a security risk or dangerous destructive operation' --level=strict -n -> ok
 one line per template (--dedup): steps hidden: -e 'a request failed' --dedup=always -n -> ok
 one sentence at a time: steps hidden: -e 'the author admits they made a mistake' --unit=sentence-by-jev -n -> ok
-calls that throw or raise: steps shown: -e '/^export (async )?function |^ *def main\\b/' --step-to -e '/throw |raise /' -> ok
-1 to 2 calls away: steps shown: -e '/^export (async )?function |^ *def main\\b/' --step-to -e '/throw |raise /' --hops=1..2 -> ok
-who reaches it (--step-reverse-to): steps shown: -e '/throw |raise /' --step-reverse-to -e '/^export (async )?function |^ *def main\\b/' -> ok
-throw or exit (two ends): steps shown: -e '/^export (async )?function |^ *def main\\b/' --step-to -e '/throw |raise /' -e '/process\\.exit\\(|sys\\.exit\\(/' -> ok
+calls that throw or raise: steps shown: -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -e '/throw |raise /' --include='*.mjs' --include='*.js' --include='*.ts' --include='*.py' -> ok
+1 to 2 calls away: steps shown: -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -e '/throw |raise /' --include='*.mjs' --include='*.js' --include='*.ts' --include='*.py' --hops=1..2 -> ok
+what reaches it (--step-reverse-to): steps shown: -e '/throw (e|err|error)\\b|^ *raise\$/' --step-reverse-to -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.js' --include='*.ts' --include='*.py' -> ok
+throw or exit (two ends): steps shown: -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --step-to -e '/throw |raise /' -e '/process\\.exit\\(|sys\\.exit\\(/' --include='*.mjs' --include='*.js' --include='*.ts' --include='*.py' -> ok
 examples en: 15 buttons, \"disk full\" (lang none) .. \"throw or exit (two ends)\" (lang en), heading \"multi-step\" (lang en)
 examples ja: 15 buttons, \"disk full\" (lang none) .. \"throw または exit（終点が2つ）\" (lang ja), heading \"多段階\" (lang ja)
 言葉ではなく意味で: steps hidden: -e '顧客が怒っている、または不満を持っている' -n
 -v で除外: steps hidden: -e 'ネットワークまたはリモート接続の失敗' -v 'リトライが行われた、または試みられた' -n
-どこから至るか (--step-reverse-to): steps shown: -e '/throw |raise /' --step-reverse-to -e '/^export (async )?function |^ *def main\\b/'
+どこから呼ばれるか (--step-reverse-to): steps shown: -e '/throw (e|err|error)\\b|^ *raise\$/' --step-reverse-to -e '/^export (async )?function |^export const [\\w\$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/' --include='*.mjs' --include='*.js' --include='*.ts' --include='*.py'
 examples en: 15 buttons, \"disk full\" (lang none) .. \"throw or exit (two ends)\" (lang en), heading \"multi-step\" (lang en); 0 sent
 before delete: 1 start row(s)
 after delete: 1 start row(s), value \"\"
@@ -1859,17 +1859,33 @@ the <=480px banner (position: fixed) is left as CSS puts it: none
 a resize closes an open tooltip: rank closed
 no request carried a target: ok" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
-# #224: every example that needs no Jev (regexes only) finds a line on this repository, with the arguments the page sends
+# #224: every example that needs no Jev (regexes only, the multi-step ones) walks at least one call on this repository, with
+# the arguments the page sends: a line at hop 1 or more, not only a start that is also an end (hop 0)
 eq "$($E node --input-type=module -e "
 import { spawnSync } from 'node:child_process';
 import { EXAMPLES, toArgv, initOf } from '../serve.mjs';
 for (const e of EXAMPLES.filter(e => e.x.every(f => f === 'S:' || /^[eav]:\/.*\/\$/.test(f)))) {
   const r = spawnSync('node', ['../sys1grep.mjs', '-r', ...toArgv(e, initOf([])), '..'], { encoding: 'utf8' });
-  console.log(e.h + ': ' + (r.status === 0 && r.stdout.trim() ? 'found' : 'nothing, exit ' + r.status));
-}")" "calls that throw or raise: found
-1 to 2 calls away: found
-who reaches it (--step-reverse-to): found
-throw or exit (two ends): found" "--serve: the regex-only examples find something on this repository"
+  const other = [...r.stdout.matchAll(/^ *\\d+ (\\S+?)[:-]\\d+[:-]/gm)].map(m => m[1]).find(f => !/\\.(mjs|js|ts|py)\$/.test(f));
+  console.log(e.h + ': ' + (r.status === 0 && /^ +[1-9]\\d* /m.test(r.stdout) ? 'walks' : 'no walk, exit ' + r.status) + (other ? ', through ' + other : ''));
+}")" "calls that throw or raise: walks
+1 to 2 calls away: walks
+what reaches it (--step-reverse-to): walks
+throw or exit (two ends): walks" "--serve: the regex-only examples walk a call on this repository, in source files only"
+# the multi-step examples' start (ENTRY) takes an entry point in each form a module writes one, and not an exported value
+eq "$(node --input-type=module -e "
+import { EXAMPLES } from '../serve.mjs';
+const re = new RegExp(EXAMPLES.find(e => e.h === 'calls that throw or raise').x[0].slice(3, -1));
+for (const l of ['export function f(a) {', 'export async function f() {', 'export const f = (a) => {', 'export const f = async (a) => {', 'async function main() {', 'function main() {', 'def main():', 'export const X = [', 'function helper() {']) console.log(l + ': ' + re.test(l));
+")" "export function f(a) {: true
+export async function f() {: true
+export const f = (a) => {: true
+export const f = async (a) => {: true
+async function main() {: true
+function main() {: true
+def main():: true
+export const X = [: false
+function helper() {: false" "--serve: the multi-step examples start at entry points in JavaScript and Python"
 # #206: the settings test wrote under the temp HOME, never the real one; the entry points that can drive --serve refuse the real HOME
 [ "$HS" != "$REALHOME/.config/sys1grep/settings.json" ] || fail "--serve settings: the test wrote the real settings.json"
 code 2 "serve-page.mjs refuses the real HOME" -- env HOME="$REALHOME" node serve-page.mjs http://127.0.0.1:1/
