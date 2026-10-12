@@ -93,10 +93,12 @@ const saveSettings = patch => {
   }
   writeSettings(next);
 };
-const body = req => new Promise((resolve, reject) => {
-  let b = '';
+// the summary's bound in sys1grep (SUMMARY_MAX): results on screen beyond it are refused before they are read in full
+const POSTED_MAX = 200 * 1024;
+const body = (req, max = 1 << 16) => new Promise((resolve, reject) => {
+  let b = '', n = 0;
   req.setEncoding('utf8');
-  req.on('data', c => { b += c; if (b.length > 1 << 16) { reject(new Error('too large')); req.destroy(); } });
+  req.on('data', c => { b += c; n += Buffer.byteLength(c); if (n > max) { reject(new Error('too large')); req.pause(); } });
   req.on('end', () => resolve(b));
   req.on('error', reject);
 });
@@ -269,10 +271,11 @@ export function serve(argv) {
     if (p && !p.r && !p.g && !p.git) throw new Error(`--serve: ${dir} is a directory: add -r to search it (${process.env.npm_lifecycle_event === 'serve' ? 'npm run serve --' : 'sys1grep --serve'} -r ${dir.startsWith('-') ? '-- ' : ''}${sh(dir)})`);
   }
   const tpl = launch.some(a => a.startsWith('--template')) ? [] : ['--template=search'];
-  const run = (args, signal) => new Promise(resolve => {
-    const child = execFile(process.execPath, [script, ...launch, ...secret, ...args, ...after], { signal, maxBuffer: 1 << 28 },
+  const run = (args, signal, input = '', env = process.env) => new Promise(resolve => {
+    const child = execFile(process.execPath, [script, ...launch, ...secret, ...args, ...after], { signal, env, maxBuffer: 1 << 28 },
       (e, out, err) => resolve({ code: e ? (typeof e.code === 'number' ? e.code : 2) : 0, out, err }));
-    child.stdin.end(); // no targets means stdin: an empty one, not a hang
+    child.stdin.on('error', () => {});
+    child.stdin.end(input); // no targets means stdin: an empty one, not a hang
   });
 
   const search = async (p, kind, signal) => {
@@ -320,6 +323,24 @@ export function serve(argv) {
         } else if (req.method !== 'GET') return send(405, 'text/plain', 'GET or POST');
         return answer(200, settingsView(cli));
       } catch (e) { return answer(500, { error: `~/.config/sys1grep/settings.json: ${e.message}` }); }
+    }
+    // #227: summarize the results the page shows, as they are: the page posts their text and only the summarize step
+    // runs on it (SYS1GREP_SUMMARIZE=stdin), no search and nothing to Jev. The query carries the search those
+    // results came from, so the summary is asked about its meanings. POST, so checked as the settings write is.
+    if (url.pathname === '/summarize') {
+      const answer = (code, x) => send(code, 'application/json', JSON.stringify(x));
+      if (req.method !== 'POST') return send(405, 'text/plain', 'POST');
+      if (req.headers.origin !== `http://${host}` || ['cross-site', 'same-site'].includes(req.headers['sec-fetch-site'])) return send(403, 'text/plain', 'forbidden');
+      if (!/^text\/plain(;|$)/.test(req.headers['content-type'] ?? '')) return send(415, 'text/plain', 'text only');
+      const p = fromQuery(url.searchParams, init);
+      if (!p || p.x.some(f => f[0] === 'S')) return send(400, 'text/plain', 'bad value');
+      let text;
+      try { text = await body(req, POSTED_MAX); } catch { return answer(413, { error: `the results on screen are more than ${POSTED_MAX / 1024} KB to summarize; narrow the search` }); }
+      if (!text.trim()) return answer(400, { error: 'no results to summarize' });
+      const ac = new AbortController();
+      res.on('close', () => ac.abort());
+      const { code, out, err } = await run(['--color=never', ...toArgv({ ...p, summarize: true }, init), '--format=plain'], ac.signal, text, { ...process.env, SYS1GREP_SUMMARIZE: 'stdin' });
+      return answer(200, code ? { error: err.trim() || `exit ${code}` } : { text: out });
     }
     const kind = url.pathname.slice(1);
     if (!['results', 'summary', 'dry'].includes(kind) || ['cross-site', 'same-site'].includes(req.headers['sec-fetch-site'])) return send(404, 'text/plain', 'not found');
@@ -434,6 +455,7 @@ Default: from a function to the functions it calls. reverse (--step-reverse-to):
 <div class="withhint hintgroup" id="hg-summarize"><label><input type="checkbox" name="summarize" aria-describedby="hint-summarize"> summarize</label><span class="hintctl"><button type="button" class="qbtn" id="q-summarize" aria-expanded="false" aria-controls="hint-summarize" aria-label="more about summarize">?</button><small class="hint" id="hint-summarize" role="tooltip">answers in a sentence or two after the search</small></span></div>
 <input type="text" name="summarize-prompt" placeholder="summary instruction" style="display:none;flex:1;min-width:160px">
 </div>
+<div class="row ask" id="ask" role="group" aria-labelledby="askq" hidden><span id="askq"></span><button type="button" id="ask-ok">OK</button><button type="button" id="ask-no">Not now</button></div>
 <div class="row"><pre id="cmd" title="the command line for the fields and controls as they are now; pasted in a terminal it runs the same search. The API key is never in it"></pre><button type="button" id="copy" title="copy the command line to the clipboard">Copy</button></div>
 </section>
 <details id="d"><summary id="ds" title="詳細: the other options; a dot means one differs from its launch value">Details</summary><div class="grid">
@@ -510,6 +532,7 @@ const show = () => {
   f.elements.rank.disabled = f.elements.summarize.disabled = multi;
   f.elements['summarize-prompt'].style.display = p.summarize && !multi ? '' : 'none';
   cmd.textContent = ['sys1grep', ...LAUNCH.map(t => quote(t)), ...shown(toArgv(p, INIT)), ...AFTER.map(t => quote(t))].join(' ');
+  if (!ask.hidden) drawAsk();
   document.getElementById('ds').className = CONTROLS.some(c => !['rank'].includes(c.k) && !c.step && p[c.k] !== INIT[c.k] && !(c.nostep && multi)) ? 'dot' : '';
   return p;
 };
@@ -525,12 +548,13 @@ const ansi = (text, into) => { // the SGR colors of --color=always, as spans; no
 let gen = 0;
 let ctl = null, running = 0;
 const busy = on => { for (const id of ['go', 'est']) document.getElementById(id).disabled = on; document.getElementById('stop').disabled = !on; };
-const get = async (kind, p, into) => {
+const get = async (kind, p, into, post) => {
   const mine = gen;
   running++;
   try {
-    const r = await fetch('/' + kind + '?' + query(p), { signal: ctl.signal }), j = await r.json().catch(() => ({ error: 'bad answer' }));
+    const r = await fetch('/' + kind + '?' + query(p), { ...post, signal: ctl.signal }), j = await r.json().catch(() => ({ error: 'bad answer' }));
     if (mine === gen) show1(j, into);
+    if (mine === gen && kind === 'results' && (j.text || j.html) && !p.x.some(x => x[0] === 'S')) onScreen = p;
   } catch (e) {
     if (mine === gen) show1({ error: String(e) }, into);
   } finally {
@@ -555,7 +579,7 @@ const run = kind => {
   const s = p.x.indexOf('S:');
   if (s === 0 || !p.x.length) { left.textContent = 'Enter a meaning.'; return; }
   if (s === p.x.length - 1) { left.textContent = 'Enter an end (--step-to).'; return; }
-  gen++; ctl = new AbortController(); busy(true);
+  gen++; ctl = new AbortController(); busy(true); onScreen = null; ask.hidden = true;
   left.textContent = 'searching...';
   const sum = kind === 'results' && p.summarize && !p.x.some(x => x[0] === 'S');
   document.getElementById('m').className = sum ? 'two' : '';
@@ -564,6 +588,32 @@ const run = kind => {
   if (sum) get('summary', p, right);
 };
 const go = () => run('results');
+// #227: checking summarize while results are on screen asks whether to summarize those results as they are. OK posts
+// their text (what the page shows) and only the summarizer runs; Not now leaves the box checked for the next Search.
+// The search they came from is kept, so a field or control changed since is said in the question.
+let onScreen = null;
+const ask = document.getElementById('ask'), askq = document.getElementById('askq'), askOk = document.getElementById('ask-ok'), askNo = document.getElementById('ask-no');
+const ASK = {
+  en: ['Summarize the results on screen as they are?', 'The results on screen are from before the fields or options changed. Summarize them as they are anyway?', 'OK', 'Not now'],
+  ja: ['表示中の結果をそのまま要約しますか？', '表示中の結果は、欄やオプションを変える前のものです。それでもそのまま要約しますか？', 'OK', '今はしない'],
+};
+const searchOf = p => { const q = query(p); q.delete('summarize'); q.delete('summarize-prompt'); return String(q); };
+const drawAsk = () => {
+  const p = read(), [q, stale, ok, no] = ASK[exLang];
+  if (!p.summarize || !onScreen || running || p.x.some(x => x[0] === 'S')) { ask.hidden = true; return; }
+  ask.lang = exLang; askq.textContent = searchOf(p) === searchOf(onScreen) ? q : stale; askOk.textContent = ok; askNo.textContent = no;
+};
+f.elements.summarize.addEventListener('change', () => { ask.hidden = !f.elements.summarize.checked; drawAsk(); });
+askNo.onclick = () => { ask.hidden = true; };
+askOk.onclick = () => {
+  if (!onScreen || running) return;
+  const left = document.getElementById('left'), right = document.getElementById('right'), frame = left.querySelector('iframe');
+  const text = frame ? frame.contentDocument.body.innerText : left.textContent;
+  ask.hidden = true;
+  gen++; ctl = new AbortController(); busy(true);
+  document.getElementById('m').className = 'two'; right.hidden = false; right.textContent = 'summarizing...';
+  get('summarize', { ...onScreen, 'summarize-prompt': read()['summarize-prompt'] }, right, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: text });
+};
 f.onsubmit = e => { e.preventDefault(); go(); return false; };
 document.getElementById('est').onclick = () => run('dry');
 document.getElementById('add').onclick = () => addField('a').children[1].focus();
@@ -585,7 +635,7 @@ const drawEx = () => {
     exRow.append(b);
   }
 };
-for (const k in exLangs) exLangs[k].onclick = () => { exLang = k; try { localStorage.setItem('exlang', k); } catch {} drawEx(); };
+for (const k in exLangs) exLangs[k].onclick = () => { exLang = k; try { localStorage.setItem('exlang', k); } catch {} drawEx(); if (!ask.hidden) drawAsk(); };
 const exButton = ex => {
   const s = ex.x.indexOf('S:');
   const b = document.createElement('button'); b.type = 'button'; b.textContent = ex.h;

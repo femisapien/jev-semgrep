@@ -6,6 +6,10 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--serve`: checking `summarize` while results are on screen asks whether to summarize those results as they are
+  (#227). OK posts the text on screen back and only the summarizer runs on it (no search, nothing sent to Jev, at most
+  200 KB); Not now leaves the box checked for the next Search; a field or option changed since the results came is
+  said in the question. In English or Japanese, with the examples' `EN` / `日本語`.
 - `--serve`: `EN` / `日本語` beside the examples switches their labels and meanings between English and Japanese (#215);
   the multi-step ones keep their regexes, `--suggest`'s pills stay as given, and the choice is remembered in the browser
   (English when storage is blocked).
