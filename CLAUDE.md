@@ -45,3 +45,7 @@ The five default labels: needs-triage, needs-info, ready-for-agent, ready-for-hu
 ### Domain docs
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Worktrees
+
+An unneeded worktree may be removed without asking. Unneeded means its PR is merged or closed and no session is working in it (check the session list; the pstack worktree-cleanup playbook's audit script lists merge state, PR state and the last chat per worktree). Use `git worktree remove` without `--force`, so git refuses a dirty one. Keep a worktree that has uncommitted changes, or commits that no branch and no merged PR contains.
