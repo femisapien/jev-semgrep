@@ -2032,6 +2032,20 @@ for (let i = 0; i < 3; i++) console.log(await once());
 " "$BASE" "$K" | sort | uniq -c | sed 's/^ *//')" "3 413 the results on screen are more than 200 KB to summarize; narrow the search" "--serve summarize: 20 MB written in full before reading: the upload ends and the 413 with its reason is there"
 rm -f "$HS"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# #233: Details' unit select also offers function; the control is nostep (serve.mjs's CONTROLS; inert while
+# multi-step is on), so a launch's --unit=function must survive a walk unchanged (sys1grep.mjs's own step-mode
+# default) rather than being forced back to --unit=line, which would die for want of --edges
+$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --unit=function "$tmp/m.py" >"$tmp/serve8.url" 2>/dev/null &
+serve=$!
+i=0; while [ ! -s "$tmp/serve8.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve --unit=function did not start"; sleep 0.05; done
+U=$(cat "$tmp/serve8.url"); BASE=${U%%\?*} K=${U#*k=}
+eq "$(curl -s "$U" | grep -Fc '<select aria-describedby="hint-unit" name="unit"><option>line</option><option>sentence-by-jev</option><option>sentence-by-rule</option><option>function</option></select>')" "1" "--serve: Details' unit select offers function"
+eq "$(curl -s "${BASE}results?k=$K&x=e:main&x=S:&x=e:raise&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: a launch --unit=function still walks with multi-step on (not forced back to --unit=line)"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&unit=bogus")" "bad value" "--serve: a bad unit is refused"
+eq "$(curl -s "${BASE}results?k=$K&x=e:main&rank=&n=1&unit=line" | node -pe "JSON.parse(require('fs').readFileSync(0)).text" | sed "s/$(printf '\033')\[[0-9;]*m//g" | tr '\n' '|')" "1:def main():||" "--serve: the control accepts line (one line, overriding the launch's function)"
+eq "$(curl -s "${BASE}results?k=$K&x=e:main&rank=&n=1&unit=function" | node -pe "JSON.parse(require('fs').readFileSync(0)).text" | sed "s/$(printf '\033')\[[0-9;]*m//g" | tr '\n' '|')" "1:def main():|2:  helper()||" "--serve: the control accepts function explicitly too (the whole function, same as the launch default)"
+kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+eq "$(node check-unit-control.mjs)" "function false true false" "--serve toArgv: a launch --unit=function is not overridden in step mode, a non-step pick still sends --unit, a step-mode pick is inert"
 # two --serve (npm run serve adds one): the last one's port is used and neither reaches the child
 PORT=$(node -e "const s = require('net').createServer().listen(0, '127.0.0.1', () => { console.log(s.address().port); s.close(); })")
 $E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --serve=$PORT "$F" >"$tmp/serve5.url" 2>/dev/null &

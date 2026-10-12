@@ -118,7 +118,9 @@ const CONTROLS = [
   { k: 'T', flag: '-T', re: '^(\\d+(\\.\\d+)?)?$' },
   { k: 'C', flag: '-C', re: '^\\d*$', nostep: true },
   { k: 'dedup', flag: '--dedup', re: '^(never|auto|always)$', nostep: true, def: 'never' },
-  { k: 'unit', flag: '--unit', re: '^(line|sentence-by-jev|sentence-by-rule)$', nostep: true, def: 'line' },
+  // No def: a multi-step walk's own default unit is function (sys1grep.mjs), not line, so the control goes
+  // inert (like C) rather than forcing a value back. Whatever the launch already set keeps applying unchanged.
+  { k: 'unit', flag: '--unit', re: '^(line|sentence-by-jev|sentence-by-rule|function)$', nostep: true },
   { k: 'auto-scope', flag: '--auto-scope', neg: '--no-auto-scope', bool: true },
   { k: 'n', flag: '-n', neg: '--no-n', bool: true },
   { k: 'p', flag: '-p', neg: '--no-p', bool: true },
@@ -468,7 +470,7 @@ ${hg('C', '<label>context lines (-C) <input name="C" size="3" inputmode="numeric
 ${hg('autoscope', '<label class="chk"><input type="checkbox" name="auto-scope"> auto-scope</label>', '--auto-scope: narrow the files by what Jev says the meaning restricts to (a language, a kind of file); off is --no-auto-scope')}
 ${hg('n', '<label class="chk"><input type="checkbox" name="n"> -n line numbers</label>', '-n: show line numbers')}${hg('p', '<label class="chk"><input type="checkbox" name="p"> -p scores</label>', '-p: show the probability of each meaning on the matching lines')}
 ${hg('dedup', '<label>dedup <select name="dedup"><option>never</option><option>auto</option><option>always</option></select></label>', '--dedup: judge one line per template (lines that differ only in ids, numbers, dates) and reuse the answer; auto does it when it pays')}
-${hg('unit', '<label>unit <select name="unit"><option>line</option><option>sentence-by-jev</option><option>sentence-by-rule</option></select></label>', '--unit: what one question judges: a line, or a sentence (found by Jev or by a rule)')}
+${hg('unit', '<label>unit <select name="unit"><option>line</option><option>sentence-by-jev</option><option>sentence-by-rule</option><option>function</option></select></label>', '--unit: what one question judges: a line, a sentence (found by Jev or by a rule), or a function (git grep -W\'s boundaries). A multi-step walk is by function regardless of this. zero (-z) is an output shape and stays on the command line')}
 ${hg('include', '<label>--include <input name="include"></label>', '--include: only file names matching these globs, space separated. Applies to -r and git sys1grep; it narrows the launch targets, never widens them')}${hg('exclude', '<label>--exclude <input name="exclude"></label>', '--exclude: not file names matching these globs, space separated. Applies to -r and git sys1grep')}
 ${hg('changed', '<label>--changed-within <input name="changed-within" placeholder="2h, 7d, a date"></label>', '--changed-within: only files modified within 30m, 2h, 7d, 2w, or since a date. Applies to -r and git sys1grep')}${hg('g', '<label class="chk"><input type="checkbox" name="g"> -g git log</label>', '-g: search git log\'s commits, one record each')}
 </div></details></form>
