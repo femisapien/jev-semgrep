@@ -1,10 +1,10 @@
 // sys1grep --serve [PORT] (#166): a page with a search box on 127.0.0.1. Each search runs sys1grep itself as a child,
 // with the launch arguments plus what the page's controls changed, so the page cannot do what the command line cannot.
 import { createServer } from 'node:http';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { parseArgs, parseEnv } from 'node:util';
 import { randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { FIELDS, maskOpts, maskUrl, readSettings, writeSettings } from './settings.mjs';
 import { OPTIONS, REVERSE_REMOVED, fill, parseOpts } from './options.mjs';
@@ -246,6 +246,17 @@ export function serve(argv) {
   const token = randomBytes(16).toString('hex');
   const summarizeAsked = init.summarize;
   const script = process.argv[1];
+  // #222: a folder searched without -r fails every search ("Is a directory (use -r)"), so refuse it before listening.
+  // Whether -r is in effect is asked of sys1grep itself (SYS1GREP_PROBE), so -r from SYS1GREP_OPTS or settings.json
+  // opts, a later --no-r, -g and git sys1grep all count as they do in a search.
+  const dir = targets.list.find(t => statSync(t, { throwIfNoEntry: false })?.isDirectory());
+  if (dir) {
+    const { stdout } = spawnSync(process.execPath, [script, ...launch], { input: '', encoding: 'utf8', timeout: 10_000, env: { ...process.env, SYS1GREP_PROBE: 'recursive' } });
+    let p;
+    try { p = JSON.parse(stdout); } catch { console.error('sys1grep: --serve: could not check whether -r is in effect'); }
+    const sh = a => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`);
+    if (p && !p.r && !p.g && !p.git) throw new Error(`--serve: ${dir} is a directory: add -r to search it (${process.env.npm_lifecycle_event === 'serve' ? 'npm run serve --' : 'sys1grep --serve'} -r ${dir.startsWith('-') ? '-- ' : ''}${sh(dir)})`);
+  }
   const tpl = launch.some(a => a.startsWith('--template')) ? [] : ['--template=search'];
   const run = (args, signal) => new Promise(resolve => {
     const child = execFile(process.execPath, [script, ...launch, ...secret, ...args, ...after], { signal, maxBuffer: 1 << 28 },

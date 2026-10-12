@@ -1911,5 +1911,36 @@ code 2 "--serve refuses --step-reverse-to at launch" -- limit $J --serve --step-
 for o in --reverse --no-reverse; do
   eq "$(limit $J --serve $o "$F" 2>&1 | head -1)" "sys1grep: --reverse was replaced by --step-reverse-to" "--serve $o: says what replaced it, at launch"
 done
+# #222: a folder without -r is refused at launch (every search would fail "Is a directory"); -r, -g and a file start
+mkdir -p "$tmp/sd" && cp "$F" "$tmp/sd/"
+eq "$(limit $J --serve "$tmp/sd" 2>&1 | head -1)" "sys1grep: --serve: $tmp/sd is a directory: add -r to search it (sys1grep --serve -r $tmp/sd)" "--serve DIR without -r: refused at launch"
+code 2 "--serve -- DIR without -r" -- limit $J --serve -- "$tmp/sd"
+for o in --rank=jev --rank=match --rank; do code 2 "--serve $o DIR without -r" -- limit $J --serve $o "$tmp/sd"; done
+code 2 "--serve DIR without -r, --rank=jev in SYS1GREP_OPTS" -- limit $E SYS1GREP_OPTS=--rank=jev SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd"
+# options a search refuses in some combination still give the check its answer: it runs before those checks
+code 2 "--serve --rank=jev --template=search DIR without -r" -- limit $J --serve --rank=jev --template=search "$tmp/sd"
+code 2 "--serve --edges=FILE DIR without -r" -- limit $J --serve --edges="$F" "$tmp/sd"
+code 2 "--serve --hops=1..2 DIR without -r" -- limit $J --serve --hops=1..2 "$tmp/sd"
+code 2 "--serve --chunk 0 DIR without -r" -- limit $J --serve --chunk 0 "$tmp/sd"
+mkdir -p "$tmp/-x"; root=$(cd .. && pwd)
+eq "$(cd "$tmp" && limit $E SYS1GREP_URL=$base/v1 node "$root/sys1grep.mjs" --serve -- -x 2>&1 | head -1)" "sys1grep: --serve: -x is a directory: add -r to search it (sys1grep --serve -r -- -x)" "--serve: a folder named like an option gets -- in the command shown"
+mkdir -p "$tmp/d sp"
+eq "$(limit $J --serve -- "$tmp/d sp" 2>&1 | head -1)" "sys1grep: --serve: $tmp/d sp is a directory: add -r to search it (sys1grep --serve -r '$tmp/d sp')" "--serve: the command shown quotes a folder name for the shell"
+eq "$(limit $J --serve "$tmp/sd" 2>/dev/null | wc -l | tr -d ' ')" "0" "--serve DIR without -r: no URL, nothing listening"
+# -r in effect from wherever sys1grep itself takes it: the launch, SYS1GREP_OPTS, settings.json opts
+code 2 "--serve --no-r DIR with -r in SYS1GREP_OPTS" -- limit $E SYS1GREP_OPTS=-r SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve --no-r "$tmp/sd"
+mkdir -p "$tmp/.config/sys1grep"
+for launch in -r -g opts settings unchecked; do
+  case $launch in
+    opts) $E SYS1GREP_OPTS=-r SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null & ;;
+    settings) printf '{"opts":["-r"]}' >"$HS"; chmod 600 "$HS"; $ES SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null & ;;
+    unchecked) $E SYS1GREP_OPTS=--nonsense SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve "$tmp/sd" >"$tmp/serve6.url" 2>"$tmp/serve6.err" & ;; # no answer: start, and say so
+    *) $J --serve $launch "$tmp/sd" >"$tmp/serve6.url" 2>/dev/null & ;;
+  esac
+  serve=$!
+  i=0; while [ ! -s "$tmp/serve6.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve DIR ($launch) did not start"; sleep 0.05; done
+  kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve6.url"; rm -f "$HS"
+done
+eq "$(head -1 "$tmp/serve6.err")" "sys1grep: --serve: could not check whether -r is in effect" "--serve: a check with no answer is reported, not fatal"
 eq "$($J --serve=99999 "$F" 2>&1 | head -1 | cut -c1-30)" "sys1grep: --serve=99999: not a" "--serve: a bad port is an error"
 echo "OK: $n checks passed (and the grep-guarded ones)"

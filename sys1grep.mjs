@@ -111,6 +111,13 @@ const { values: opt, positionals: files, tokens } = parseArgs({
 if (opt['summarize-format'] !== undefined) die('--summarize-format was removed; use --format', false);
 if (opt.reverse !== undefined) die(REVERSE_REMOVED, false);
 for (const k of ['rank', 'summarize']) if (opt[k] === OFF) delete opt[k];
+// #222: --serve's launch check. With the options settled (command line, SYS1GREP_OPTS, settings.json opts) and before
+// any check of how they combine, say whether a folder target would be searched: -r in effect, or -g / git sys1grep,
+// which read no target files. Nothing is read or sent.
+if (process.env.SYS1GREP_PROBE === 'recursive') {
+  console.log(JSON.stringify({ r: !!opt.r, g: !!opt.gitlog, git: globalThis.SYS1GREP_GIT === true }));
+  process.exit(0);
+}
 // --verbose / --dry-run (#90): where a parsed option's value came from. null: never set (caller says "default").
 // '': the command line (no source shown, as for any setting not from an env var or SYS1GREP_OPTS). 'SYS1GREP_OPTS':
 // its last token is one of the `defaults` this run prepended.
