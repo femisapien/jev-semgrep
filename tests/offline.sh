@@ -1947,24 +1947,35 @@ head -c 204801 /dev/zero | tr '\0' a >"$tmp/sp.big"
 eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H "$ST" --data-binary @"$tmp/sp.big") $(field j.error <"$tmp/sp.out")" '413 "the results on screen are more than 200 KB to summarize; narrow the search"' "--serve summarize: an oversized body is refused, saying why"
 node -e "process.stdout.write('あ'.repeat(70000))" >"$tmp/sp.big" # 70,000 characters, 210,000 bytes: the bound is in bytes
 eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H "$ST" --data-binary @"$tmp/sp.big")" "413" "--serve summarize: the bound counts bytes, not characters"
-# far over the bound, from a client that sends the whole body before it reads (as a browser's fetch may): the 413 and
-# its reason reach it, three times running. A request left unread stalls the upload; one closed under the answer
-# resets it on Linux before the answer is read (#232 CI, node 22)
+# far over the bound, from a client that writes the whole body before it reads anything (as a browser may), three
+# times: the upload must finish, then the 413 with its reason must be there to read. A request the server stops
+# reading stalls the upload ("still sending"); one it closes under the upload resets it on Linux (#232 CI, node 22)
 eq "$(node --input-type=module -e "
-import { request } from 'node:http';
-const [base, token] = process.argv.slice(1), u = new URL('summarize?x=e:helper', base);
+import { connect } from 'node:net';
+const [base, token] = process.argv.slice(1), u = new URL(base), size = 20e6;
 const once = () => new Promise(done => {
-  const t = setTimeout(() => done('no answer after 10 s'), 10000);
-  const req = request(u, { method: 'POST', headers: { 'x-sys1grep-token': token, origin: u.origin, 'content-type': 'text/plain' } }, res => {
-    let b = '';
-    res.setEncoding('utf8').on('data', c => { b += c; }).on('end', () => { clearTimeout(t); done(res.statusCode + ' ' + JSON.parse(b).error); });
+  const s = connect(Number(u.port), u.hostname);
+  let b = Buffer.alloc(0), written = false;
+  const t = setTimeout(() => { s.destroy(); done(written ? 'no answer 10 s after sending' : 'still sending after 10 s'); }, 10000);
+  const end = r => { clearTimeout(t); s.destroy(); done(r); };
+  s.on('error', e => end('reset (' + e.code + ')'));
+  s.write('POST /summarize?x=e:helper HTTP/1.1\r\nhost: ' + u.host + '\r\nx-sys1grep-token: ' + token + '\r\norigin: ' + u.origin + '\r\ncontent-type: text/plain\r\ncontent-length: ' + size + '\r\n\r\n');
+  s.write(Buffer.alloc(size, 97), () => {
+    written = true;
+    s.on('data', c => {
+      b = Buffer.concat([b, c]);
+      const h = b.indexOf('\r\n\r\n');
+      if (h < 0) return;
+      const head = b.subarray(0, h).toString(), rest = b.subarray(h + 4), len = /content-length: *(\d+)/i.exec(head);
+      let body = null;
+      if (len && rest.length >= Number(len[1])) body = rest.subarray(0, Number(len[1])).toString();
+      else if (!len && rest.toString().endsWith('0\r\n\r\n')) body = rest.toString().replace(/^[0-9a-f]+\r\n|\r\n0\r\n\r\n$/g, '');
+      if (body !== null) end(head.split(' ')[1] + ' ' + JSON.parse(body).error);
+    });
   });
-  req.on('error', e => { clearTimeout(t); done('reset before the answer (' + e.code + ')'); });
-  req.end(Buffer.alloc(20e6, 97));
 });
 for (let i = 0; i < 3; i++) console.log(await once());
-process.exit(0);
-" "$BASE" "$K" | sort | uniq -c | sed 's/^ *//')" "3 413 the results on screen are more than 200 KB to summarize; narrow the search" "--serve summarize: 20 MB is refused, and the 413 with its reason reaches a client that sends it all first"
+" "$BASE" "$K" | sort | uniq -c | sed 's/^ *//')" "3 413 the results on screen are more than 200 KB to summarize; narrow the search" "--serve summarize: 20 MB written in full before reading: the upload ends and the 413 with its reason is there"
 rm -f "$HS"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # two --serve (npm run serve adds one): the last one's port is used and neither reaches the child
