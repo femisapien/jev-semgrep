@@ -342,9 +342,11 @@ As git sys1grep, FILE arguments are pathspecs and every tracked file is searched
                In SYS1GREP_OPTS it is the default for every search, so every match goes to TOOL's provider too.
                With --dedup, each template's representative goes once, marked (×N like it). Over 200 KB nothing
                is sent to TOOL (exit 2): narrow the expression or add --dedup
-               --summarize=ask: the lines print as usual, then, on a terminal, "Summarize these matches? [y/N]";
-               y pipes those lines to the TOOL of a bare --summarize, with no second search. No terminal (a pipe,
-               a script): no question. -y summarizes unasked; -q and --dry-run never ask. The exit status stays the search's
+               --summarize=ask: the lines print as usual, then "Summarize these matches? [y/N]" on the terminal;
+               y pipes those lines to the TOOL of a bare --summarize, with no second search. Asked only when stdout
+               is a terminal too: not in a script, | less or $(...). -y summarizes unasked, also from SYS1GREP_OPTS;
+               -q and --dry-run never ask. With --dedup every line prints and TOOL gets the representatives.
+               The exit status stays the search's
   --no-summarize  turn off an earlier --summarize (from SYS1GREP_OPTS, say): the lines print again
   --summarize-prompt=TEXT  the user's own instruction, added after the fixed one in --summarize's system
                prompt (how long, what to focus on, ...). Needs --summarize; empty TEXT is the same as none
@@ -607,9 +609,10 @@ git sys1grep として呼ぶと git grep と同じく FILE は pathspec にな�
                SYS1GREP_OPTS に書くとすべての検索の既定になり、一致した行は毎回 TOOL の提供元へも送られる。
                --dedup ではテンプレートごとに代表を 1 回だけ、(×N like it) を付けて渡す。200 KB を超えたら
                TOOL には何も渡さない (終了コード 2)。式を絞るか --dedup を付ける
-               --summarize=ask: 行はいつもどおり出し、端末があれば続けて「Summarize these matches? [y/N]」と聞く。
-               y なら出した行を値なしの --summarize の TOOL に渡す (検索はやり直さない)。端末が無ければ (パイプ・
-               スクリプト) 聞かない。-y は聞かずに要約し、-q と --dry-run は聞かない。終了コードは検索のもの
+               --summarize=ask: 行はいつもどおり出し、続けて端末で「Summarize these matches? [y/N]」と聞く。
+               y なら出した行を値なしの --summarize の TOOL に渡す (検索はやり直さない)。標準出力も端末のときだけ
+               聞く (スクリプト・| less・$(...) では聞かない)。-y は聞かずに要約する (SYS1GREP_OPTS の -y でも)。
+               -q と --dry-run は聞かない。--dedup では行はすべて出し、TOOL には代表を渡す。終了コードは検索のもの
   --no-summarize  それより前の --summarize (SYS1GREP_OPTS のものなど) を取り消し、行をそのまま出す
   --summarize-prompt=TEXT  --summarize のシステムプロンプトに、固定の指示に続けて足すユーザー自身の指示
                (長さ・観点など)。--summarize が要る。空の TEXT は指定しないのと同じ
@@ -2227,8 +2230,12 @@ const multi = opt['with-filename'] ?? (opt.r || asGit || targets.length > 1);
 // --summarize collects the lines instead; -z's NULs become blank lines there, since an LLM reads text.
 const piped = [];
 // --summarize=ask prints them as well, and pipes them as --summarize would (no colors, no NULs).
-const write = !summarizer ? s => process.stdout.write(s) : !askSummary ? s => piped.push(s)
-  : s => { process.stdout.write(s); piped.push(s.replace(/\x1b\[[\d;]*m/g, '').replace(/\0/g, '\n\n')); };
+// With --dedup it prints every line and pipes the representatives: a row starting \u0003 is a member's, piped never;
+// \u0004...\u0004 holds a representative's "(×N like it)", piped only.
+const write = !summarizer ? s => process.stdout.write(s) : !askSummary ? s => piped.push(s) : s => {
+  process.stdout.write(s.replace(/\u0003|\u0004[^\u0004]*\u0004/g, ''));
+  piped.push(s.split(/(?<=[\n\0])/).filter(l => !l.startsWith('\u0003')).join('').replace(/\u0004/g, '').replace(/\x1b\[[\d;]*m/g, '').replace(/\0/g, '\n\n'));
+};
 const EOL = opt.gitlog || outFormat !== 'plain' ? '\n' : summarizer && !askSummary && opt.z ? '\n\n' : SEP; // -g: each commit ends in a newline, so a blank line between
 // --summarize --dedup (#98): a representative stands for its template, as it did for Jev: members share its answers
 // (the same Map), so each Map is piped once, with how many matching units it stands for: sentences, not the lines
@@ -2253,9 +2260,9 @@ for (const file of opt.quiet || dry ? [] : targets) {
   for (const no of [...h.keys()].sort((a, b) => a - b)) {
     const group = likeIt.size ? asksByUnit.get(h.get(no)) : null;
     // the representative's other lines (a sentence or function over several) still pipe; other members do not
-    const firstLine = !pipedUnits.has(group);
-    if (group && !firstLine && pipedUnits.get(group) !== h.get(no)) continue;
-    pipedUnits.set(group, h.get(no));
+    const firstLine = !pipedUnits.has(group), member = group && !firstLine && pipedUnits.get(group) !== h.get(no);
+    if (member && !(askSummary && !opt.rank)) continue; // --summarize=ask prints them all (--rank folds what it prints)
+    if (!member) pipedUnits.set(group, h.get(no));
     const from = Math.max(no - before, last + 1), to = Math.min(no + after, src.length);
     // A result (#118) is what -- separates: a match and its context, joined by any context that touches it; without
     // context one match, the lines of one sentence or function together.
@@ -2265,12 +2272,13 @@ for (const file of opt.quiet || dry ? [] : targets) {
     for (let k = from; k <= to; k++) {
       const p = h.get(k);
       const sep = paint(36, p ? ':' : '-');
-      const prefix = (multi ? paint(35, file) + sep : '') + (opt.n ? paint(32, startNo(file, k)) + sep : '');
+      let prefix = (multi ? paint(35, file) + sep : '') + (opt.n ? paint(32, startNo(file, k)) + sep : '');
       const tail = opt.p && p ? `\t[${displayRow(p).map(paintProb).join(' ')}]` : '';
       const text = src[k - 1], sentences = ranges.get(file)?.get(k);
       const matches = !p ? [] : sentences ? sentences.flatMap(([a, b, s]) => regexRanges(text, s, a, b)) : regexRanges(text, p);
       // Only data records carry the NUL terminator, as in grep -z; file names and counts stay on newlines.
-      const n = p && group && k === no && firstLine ? likeIt.get(group).size : 0, like = n > 1 ? `   (×${n} like it)` : '';
+      const n = p && group && k === no && firstLine ? likeIt.get(group).size : 0, like = n < 2 ? '' : askSummary && !opt.rank ? `\u0004   (×${n} like it)\u0004` : `   (×${n} like it)`;
+      if (member) prefix = `\u0003${prefix}`;
       if (partsOnly && matches.length) {
         let end = -1; // a match overlapping the last one printed is skipped; a skipped one does not hide later ones
         for (const [a, b] of matches) if (a >= end) { r.rows.push(prefix + paint('01;31', text.slice(a, b)) + tail + like + EOL); end = b; }

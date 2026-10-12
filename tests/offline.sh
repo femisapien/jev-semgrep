@@ -1023,6 +1023,13 @@ out=$(onpty "$S --summarize=ask --dry-run -e cat '$F'; echo rc=\$?" </dev/null)
 case $out in *'Summarize these'*) fail "--summarize=ask --dry-run asks: $out" ;; esac
 code 0 "--summarize=ask, summarizer fails: the search's status" -- env SUM_EXIT=3 $S --summarize=ask -y -e cat "$F"
 code 2 "--summarize=ask -l" -- $S --summarize=ask -l -e cat "$F"
+rm -f "$tmp/sum.in"; code 1 "--summarize=ask -y, no match" -- $S --summarize=ask -y -e zebra "$F"
+[ ! -e "$tmp/sum.in" ] || fail "--summarize=ask -y, no match: the summarizer is not run"
+eq "$($S --summarize=ask -z -e cat "$tmp/z" </dev/null | od -An -c | tr -d ' \n')" "$($J -z -e cat "$tmp/z" | od -An -c | tr -d ' \n')" "--summarize=ask -z: records still end in NUL"
+# --dedup: every line prints as without --summarize; the summarizer gets the representative, marked
+eq "$($S --summarize=ask -y --dedup=always -n -e cat "$tmp/rep.txt" </dev/null | grep -v SUMMARY)" "$($J --dedup=always -n -e cat "$tmp/rep.txt")" "--summarize=ask --dedup: the lines print as without it"
+eq "$(cat "$tmp/sum.in")" "$($S --summarize --dedup=always -n -e cat "$tmp/rep.txt" >/dev/null; cat "$tmp/sum.in")" "--summarize=ask --dedup: the summarizer gets what --summarize pipes"
+eq "$(wc -l <"$tmp/sum.in" | tr -d ' ')" "1" "--summarize --dedup: one representative piped"
 reset
 eq "$(stat count)" "0" "--summarize errors send nothing"
 rm -f "$tmp/sum.in"; $S --summarize --dry-run -e cat "$F" | grep -q '^sys1grep: summarize: claude -p --model haiku --tools "" .*--system-prompt "Summarize' || fail "--dry-run shows the summarizer"
@@ -1740,6 +1747,18 @@ eq "$(curl -s "$U" | grep -c 'SUGGEST = \[{"h":"why is it slow","x":\["Q:why is 
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
+# a launch --summarize=ask: results are the lines (nothing asked, no terminal), the summary pane summarizes; a launch TOOL stays the pane's
+printf '%s\n' '#!/bin/sh' 'cat >/dev/null' 'echo LLMSUMMARY' >"$tmp/bin/llm"; chmod +x "$tmp/bin/llm"
+for launch in --summarize=ask --summarize=llm; do
+  $E PATH=$tmp/bin:$PATH SUM=$tmp/sum SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve $launch "$F" >"$tmp/serve7.url" 2>/dev/null &
+  serve=$!
+  i=0; while [ ! -s "$tmp/serve7.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve $launch did not start"; sleep 0.05; done
+  U=$(cat "$tmp/serve7.url"); BASE=${U%%\?*} K=${U#*k=}
+  want=SUMMARY; [ $launch = --summarize=ask ] || want=LLMSUMMARY
+  eq "$(curl -s "${BASE}summary?k=$K&x=e:cat&rank=&summarize=1" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.text || j.error).trim()")" "$want" "--serve $launch: the summary pane"
+  eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.text || j.error" | grep -c cat)" "2" "--serve $launch: results are the lines"
+  kill $serve 2>/dev/null; wait $serve 2>/dev/null || true; : >"$tmp/serve7.url"
+done
 # a search the page abandons (Stop) ends its child: a server that never answers, a request given up after 1 s
 node -e "const s = require('http').createServer(() => {}).listen(0, () => console.log(s.address().port))" >"$tmp/hang.port" &
 hang=$!

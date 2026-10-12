@@ -817,7 +817,8 @@ search, nothing more sent to Jev. Enter or anything else ends there.
 
 - The question goes over `/dev/tty`, so a stdin target still works. With no terminal, or stdout not one (a pipe,
   `$(...)`, a script), nothing is asked and nothing hangs.
-- `-y` summarizes without asking; `-q` and `--dry-run` never ask.
+- `-y` summarizes without asking, so `-y` in `SYS1GREP_OPTS` makes it summarize every time; `-q` and `--dry-run` never ask.
+- With `--dedup`, every matching line prints; the TOOL gets each template's representative, as with `--summarize`.
 - The exit status is the search's, whatever the summary does. Over 200 KB, a `y` says so instead of sending.
 
 Other TOOLs:
