@@ -811,6 +811,15 @@ $ sys1grep -r -n --summarize --summarize-prompt="3 lines or fewer, just which fi
 It needs `--summarize`; empty TEXT is the same as leaving it out. It comes after the `--format` sentence,
 so TEXT can override the format.
 
+To decide after seeing the lines, `--summarize=ask` prints them as usual and then asks on the terminal
+`Summarize these matches? [y/N]`. On `y` the lines just printed go to the TOOL of a bare `--summarize`: no second
+search, nothing more sent to Jev. Enter or anything else ends there.
+
+- The question goes over `/dev/tty`, so a stdin target still works. With no terminal, or stdout not one (a pipe,
+  `$(...)`, a script), nothing is asked and nothing hangs.
+- `-y` summarizes without asking; `-q` and `--dry-run` never ask.
+- The exit status is the search's, whatever the summary does. Over 200 KB, a `y` says so instead of sending.
+
 Other TOOLs:
 
 ```sh

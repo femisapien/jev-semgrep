@@ -998,6 +998,31 @@ eq "$($S --summarize --no-summarize -n -e cat "$F" | nums)" "1 4 " "--no-summari
 eq "$($S --no-summarize --summarize -e cat "$F")" "SUMMARY" "--summarize after --no-summarize wins"
 code 2 "--summarize-prompt with --no-summarize" -- $S --summarize --no-summarize --summarize-prompt=x -e cat "$F"
 code 2 "--summarize= (empty)" -- $S --summarize= -e cat "$F"
+# --summarize=ask (#229): the lines print, then a question on the terminal; y summarizes those lines, with no second search
+reset; rm -f "$tmp/sum.in"; out=$(asking "$S --summarize=ask --color=never -n -e cat '$F'" y)
+eq "$(stat count)" "1" "--summarize=ask, y: no second search"
+eq "$(tr '\n' '|' <"$tmp/sum.in")" "1:cat|4:cat dog|" "--summarize=ask, y: the summarizer gets the lines printed"
+echo "$out" | tr -d '\r' | grep -A1 '^4:cat dog$' | grep -q 'Summarize these matches? \[y/N\] y' || fail "--summarize=ask: the question follows the lines: $out"
+echo "$out" | tr -d '\r' | grep -qx 'SUMMARY' || fail "--summarize=ask, y: the summary prints: $out"
+for a in n ''; do
+  rm -f "$tmp/sum.in"; out=$(asking "$S --summarize=ask -n -e cat '$F'" "$a")
+  [ ! -e "$tmp/sum.in" ] || fail "--summarize=ask, answer '$a': nothing summarized"
+  echo "$out" | grep -q 'rc=0' || fail "--summarize=ask, answer '$a': exit 0: $out"
+done
+rm -f "$tmp/sum.in"; eq "$(limit $S --summarize=ask -n -e cat "$F" </dev/null | nums)" "1 4 " "--summarize=ask, no terminal: the lines, no question"
+[ ! -e "$tmp/sum.in" ] || fail "--summarize=ask, no terminal: nothing summarized"
+out=$(onpty "$S --summarize=ask -n -e cat '$F' | cat; echo rc=\$?" </dev/null)
+case $out in *'Summarize these'*) fail "--summarize=ask asks when stdout is a pipe: $out" ;; esac
+echo "$out" | grep -q '4:cat dog' || fail "--summarize=ask, stdout a pipe: the lines: $out"
+eq "$($S --summarize=ask -y -n -e cat "$F" </dev/null | tr '\n' '|')" "1:cat|4:cat dog|SUMMARY|" "--summarize=ask -y: the lines, then the summary unasked"
+$S --summarize=ask -y --color=always -n -e cat "$F" >/dev/null
+eq "$(tr '\n' '|' <"$tmp/sum.in")" "1:cat|4:cat dog|" "--summarize=ask: colored lines print, plain lines are piped"
+rm -f "$tmp/sum.in"; code 0 "--summarize=ask -q -y" -- $S --summarize=ask -q -y -e cat "$F"
+[ ! -e "$tmp/sum.in" ] || fail "--summarize=ask -q: nothing summarized"
+out=$(onpty "$S --summarize=ask --dry-run -e cat '$F'; echo rc=\$?" </dev/null)
+case $out in *'Summarize these'*) fail "--summarize=ask --dry-run asks: $out" ;; esac
+code 0 "--summarize=ask, summarizer fails: the search's status" -- env SUM_EXIT=3 $S --summarize=ask -y -e cat "$F"
+code 2 "--summarize=ask -l" -- $S --summarize=ask -l -e cat "$F"
 reset
 eq "$(stat count)" "0" "--summarize errors send nothing"
 rm -f "$tmp/sum.in"; $S --summarize --dry-run -e cat "$F" | grep -q '^sys1grep: summarize: claude -p --model haiku --tools "" .*--system-prompt "Summarize' || fail "--dry-run shows the summarizer"

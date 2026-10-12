@@ -6,6 +6,9 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ## [Unreleased]
 
 ### Added
+- `--summarize=ask` (#229): the lines print as usual, then, on a terminal, `Summarize these matches? [y/N]`; `y`
+  summarizes the lines just printed with the TOOL of a bare `--summarize`, with no second search. No terminal, or
+  stdout not one: no question. `-y` summarizes unasked; `-q` and `--dry-run` never ask; the exit status is the search's.
 - `--serve`: `EN` / `日本語` beside the examples switches their labels and meanings between English and Japanese (#215);
   the multi-step ones keep their regexes, `--suggest`'s pills stay as given, and the choice is remembered in the browser
   (English when storage is blocked).
