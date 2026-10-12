@@ -1925,7 +1925,9 @@ a field changed since: \"The results on screen are from before the fields or opt
 日本語: \"表示中の結果は、欄やオプションを変える前のものです。それでもそのまま要約しますか？\" [OK / 今はしない] (lang ja)
 the field back as it was: \"Summarize the results on screen as they are?\" [OK / Not now] (lang en)
 multi-step on: no question
-OK: no question; sent /summarize with the results on screen as they are, 1 request(s) in all; summary pane shown: \"SUMMARY\\n\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
+OK: no question; sent /summarize with the results on screen as they are, 1 request(s) in all; summary pane shown: \"SUMMARY\\n\"
+x=e:/def main/ hops=0.. reverse=1 -> 1 lines
+Search with summarize on: 2 request(s), 1 POST(s) /summarize with the results on screen as they are; summary pane shown: \"SUMMARY\\n\"" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
 # #224: every example that needs no Jev (regexes only, the multi-step ones) walks at least one call, with the arguments the
 # page sends, on this repository and on a small Python program: a line at hop 1 or more (not only a start that is also

@@ -392,3 +392,11 @@ const s1 = sent.length, p1 = posts.length, shownText = text(byId.left);
 byId['ask-ok'].onclick();
 while (byId.go.disabled) await new Promise(r => setTimeout(r, 20));
 console.log(`OK: ${askState()}; sent ${posts.slice(p1).map(([p, b]) => `${p} with the results on screen ${b === shownText ? 'as they are' : 'FAIL: ' + JSON.stringify(b)}`)}, ${sent.length - s1} request(s) in all; summary pane ${byId.right.hidden ? 'hidden' : 'shown'}: ${JSON.stringify(text(byId.right))}`);
+
+// #231: Search itself, with summarize already checked, runs the search once and summarizes the results it gets: one
+// `results` request, then one `/summarize` POST over the text on screen, and no second (whole-search) `summary`
+// request -- so `posts` gains exactly one entry, not zero (the old two-GET shape left posts untouched).
+const s2 = sent.length, p2 = posts.length;
+console.log(await search());
+const shown2 = text(byId.left);
+console.log(`Search with summarize on: ${sent.length - s2} request(s), ${posts.length - p2} POST(s) ${posts.slice(p2).map(([p, b]) => `${p} with the results on screen ${b === shown2 ? 'as they are' : 'FAIL: ' + JSON.stringify(b)}`)}; summary pane ${byId.right.hidden ? 'hidden' : 'shown'}: ${JSON.stringify(text(byId.right))}`);
