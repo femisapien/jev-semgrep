@@ -1030,6 +1030,10 @@ eq "$($S --summarize=ask -z -e cat "$tmp/z" </dev/null | od -An -c | tr -d ' \n'
 eq "$($S --summarize=ask -y --dedup=always -n -e cat "$tmp/rep.txt" </dev/null | grep -v SUMMARY)" "$($J --dedup=always -n -e cat "$tmp/rep.txt")" "--summarize=ask --dedup: the lines print as without it"
 eq "$(cat "$tmp/sum.in")" "$($S --summarize --dedup=always -n -e cat "$tmp/rep.txt" >/dev/null; cat "$tmp/sum.in")" "--summarize=ask --dedup: the summarizer gets what --summarize pipes"
 eq "$(wc -l <"$tmp/sum.in" | tr -d ' ')" "1" "--summarize --dedup: one representative piped"
+# what prints and what is piped are kept apart, never marked inside the text: control characters in a line print and pipe as they are
+printf 'cat \003a\004 hidden \004b\n' >"$tmp/ctl.txt"
+eq "$($S --summarize=ask -y -e cat "$tmp/ctl.txt" </dev/null | head -1 | od -An -c | tr -d ' \n')" "$(head -1 "$tmp/ctl.txt" | od -An -c | tr -d ' \n')" "--summarize=ask: control characters in a line print"
+eq "$(od -An -c <"$tmp/sum.in" | tr -d ' \n')" "$(od -An -c <"$tmp/ctl.txt" | tr -d ' \n')" "--summarize=ask: control characters in a line are piped"
 reset
 eq "$(stat count)" "0" "--summarize errors send nothing"
 rm -f "$tmp/sum.in"; $S --summarize --dry-run -e cat "$F" | grep -q '^sys1grep: summarize: claude -p --model haiku --tools "" .*--system-prompt "Summarize' || fail "--dry-run shows the summarizer"

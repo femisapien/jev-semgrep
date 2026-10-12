@@ -2229,13 +2229,11 @@ const after = partsOnly ? 0 : Number(opt.A ?? opt.C ?? 0), before = partsOnly ? 
 const multi = opt['with-filename'] ?? (opt.r || asGit || targets.length > 1);
 // --summarize collects the lines instead; -z's NULs become blank lines there, since an LLM reads text.
 const piped = [];
-// --summarize=ask prints them as well, and pipes them as --summarize would (no colors, no NULs).
-// With --dedup it prints every line and pipes the representatives: a row starting \u0003 is a member's, piped never;
-// \u0004...\u0004 holds a representative's "(×N like it)", piped only.
-const write = !summarizer ? s => process.stdout.write(s) : !askSummary ? s => piped.push(s) : s => {
-  process.stdout.write(s.replace(/\u0003|\u0004[^\u0004]*\u0004/g, ''));
-  piped.push(s.split(/(?<=[\n\0])/).filter(l => !l.startsWith('\u0003')).join('').replace(/\u0004/g, '').replace(/\x1b\[[\d;]*m/g, '').replace(/\0/g, '\n\n'));
-};
+// --summarize=ask prints them as well, and pipes them as --summarize would (no colors, no NULs). Without --rank it
+// prints every line and pipes only what --summarize would (pipeOnly: a result's rows for the pipe, kept beside them).
+const pipe = s => piped.push(s.replace(/\x1b\[[\d;]*m/g, '').replace(/\0/g, '\n\n'));
+const write = !summarizer ? s => process.stdout.write(s) : !askSummary ? s => piped.push(s) : s => { process.stdout.write(s); pipe(s); };
+const pipeOnly = askSummary && !opt.rank;
 const EOL = opt.gitlog || outFormat !== 'plain' ? '\n' : summarizer && !askSummary && opt.z ? '\n\n' : SEP; // -g: each commit ends in a newline, so a blank line between
 // --summarize --dedup (#98): a representative stands for its template, as it did for Jev: members share its answers
 // (the same Map), so each Map is piped once, with how many matching units it stands for: sentences, not the lines
@@ -2261,31 +2259,31 @@ for (const file of opt.quiet || dry ? [] : targets) {
     const group = likeIt.size ? asksByUnit.get(h.get(no)) : null;
     // the representative's other lines (a sentence or function over several) still pipe; other members do not
     const firstLine = !pipedUnits.has(group), member = group && !firstLine && pipedUnits.get(group) !== h.get(no);
-    if (member && !(askSummary && !opt.rank)) continue; // --summarize=ask prints them all (--rank folds what it prints)
+    if (member && !pipeOnly) continue;
     if (!member) pipedUnits.set(group, h.get(no));
     const from = Math.max(no - before, last + 1), to = Math.min(no + after, src.length);
     // A result (#118) is what -- separates: a match and its context, joined by any context that touches it; without
     // context one match, the lines of one sentence or function together.
     if (!(results.at(-1)?.file === file && from === last + 1 && (after || before || h.get(no) === lastHit)))
-      results.push({ file, rows: [], texts: [], hits: new Set() });
+      results.push({ file, rows: [], pipe: [], texts: [], hits: new Set() });
     const r = results.at(-1);
     for (let k = from; k <= to; k++) {
       const p = h.get(k);
       const sep = paint(36, p ? ':' : '-');
-      let prefix = (multi ? paint(35, file) + sep : '') + (opt.n ? paint(32, startNo(file, k)) + sep : '');
+      const prefix = (multi ? paint(35, file) + sep : '') + (opt.n ? paint(32, startNo(file, k)) + sep : '');
       const tail = opt.p && p ? `\t[${displayRow(p).map(paintProb).join(' ')}]` : '';
       const text = src[k - 1], sentences = ranges.get(file)?.get(k);
       const matches = !p ? [] : sentences ? sentences.flatMap(([a, b, s]) => regexRanges(text, s, a, b)) : regexRanges(text, p);
       // Only data records carry the NUL terminator, as in grep -z; file names and counts stay on newlines.
-      const n = p && group && k === no && firstLine ? likeIt.get(group).size : 0, like = n < 2 ? '' : askSummary && !opt.rank ? `\u0004   (×${n} like it)\u0004` : `   (×${n} like it)`;
-      if (member) prefix = `\u0003${prefix}`;
+      const n = p && group && k === no && firstLine ? likeIt.get(group).size : 0, like = n > 1 ? `   (×${n} like it)` : '';
+      const add = row => { r.rows.push(row + (pipeOnly ? '' : like) + EOL); if (pipeOnly && !member) r.pipe.push(row + like + EOL); };
       if (partsOnly && matches.length) {
         let end = -1; // a match overlapping the last one printed is skipped; a skipped one does not hide later ones
-        for (const [a, b] of matches) if (a >= end) { r.rows.push(prefix + paint('01;31', text.slice(a, b)) + tail + like + EOL); end = b; }
+        for (const [a, b] of matches) if (a >= end) { add(prefix + paint('01;31', text.slice(a, b)) + tail); end = b; }
       } else if (marking) {
         const spans = !p ? [] : matches.length ? matches : opt.unit === 'function' ? [] : sentences ? sentences.map(([a, b]) => [a, b]) : text ? [[0, text.length]] : []; // a whole function marked says nothing
-        r.rows.push(prefix.replace(/[\u0001\u0002]/g, '') + (/[\u0001\u0002]/.test(text) ? text.replace(/[\u0001\u0002]/g, '') : markup(text, spans)) + tail + like + EOL);
-      } else r.rows.push(prefix + highlight(text, sentences, matches) + tail + like + EOL);
+        add(prefix.replace(/[\u0001\u0002]/g, '') + (/[\u0001\u0002]/.test(text) ? text.replace(/[\u0001\u0002]/g, '') : markup(text, spans)) + tail);
+      } else add(prefix + highlight(text, sentences, matches) + tail);
       r.texts.push(text);
       if (p) r.hits.add(p);
     }
@@ -2418,7 +2416,10 @@ if (multiStep) {
   const tree = u => { write(row(u)); (under.get(u) ?? []).forEach(tree); };
   if (!opt.quiet && !dry) starts.filter(u => onPath.has(u)).forEach((u, i) => { if (i) write(`${paint(36, '--')}\n`); tree(u); });
 }
-if (!opt.rank) results.forEach((r, i) => { if (i && (after || before)) write(`${paint(36, '--')}\n`); r.rows.forEach(write); });
+if (!opt.rank) results.forEach((r, i) => {
+  if (i && (after || before)) write(`${paint(36, '--')}\n`);
+  if (pipeOnly) { r.rows.forEach(s => process.stdout.write(s)); r.pipe.forEach(pipe); } else r.rows.forEach(write);
+});
 // --rank=match: a result's best match probability, over the meanings that are not negated of the terms that held.
 const matchScore = l => Math.max(0, ...expr.filter(term => termHolds(term, l)).flatMap(term => {
   const { matches } = regexPart(term, l);
