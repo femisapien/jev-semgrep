@@ -211,7 +211,7 @@ versions follow [Semantic Versioning](https://semver.org/) (until 1.0, option ch
 ### Changed
 - `--serve`'s examples also find something when it is started on this repository (#224): the multi-step ones start
   at a module's entry points (`export function`, `export const f = (...) =>`, `function main`, Python's `def main`),
-  end at `throw` / `raise` and `process.exit(` / `sys.exit(`, and walk source files only (`*.mjs *.js *.ts *.py`);
+  end at `throw` / `raise` and `process.exit(` / `sys.exit(`, and walk source files only (`*.mjs *.cjs *.js *.jsx *.ts *.tsx *.py`);
   "what reaches it" walks back from a rethrown error. Two meaning examples are new, "where an API key is read" and
   "a request is retried".
 - `--step-reverse-to` replaces `--reverse` (#212): `--reverse --step-to X` is now `--step-reverse-to X`, with the

@@ -131,8 +131,10 @@ const FIELD = /^[eavQS]:/; // an expression field: e:MEANING (-e), a, v, Q (-Q),
 // hj / xj: the label and fields in Japanese (#215), for the page's EN / 日本語 switch; a regex example keeps its x.
 // Pressing one puts the page in that state: the rest go back to their launch values; an S: in x turns multi-step on.
 const ENTRY = '/^export (async )?function |^export const [\\w$]+ = (async )?\\(|^(async )?function main\\b|^ *def main\\b/'; // a module's entry points
-const RETHROW = '/throw (e|err|error)\\b|^ *raise$/'; // a caught error thrown on: any throw would put the entry points (which throw) at both ends, with no walk between (#225 review)
-const SRC = '*.mjs *.js *.ts *.py';
+// a caught error thrown on: any throw would put the entry points (which throw) at both ends, with no walk between; m: a
+// walk matches a whole function at once, and ^ $ must mean a line in it (#225 review)
+const RETHROW = '/throw (e|err|error)\\b|^ *raise$/m';
+const SRC = '*.mjs *.cjs *.js *.jsx *.ts *.tsx *.py'; // not *.mts: tests/smoke.mts would put its search() in the walk
 export const EXAMPLES = [
   { h: 'meaning, not words', hj: '言葉ではなく意味で', x: ['e:customer is angry or frustrated'], xj: ['e:顧客が怒っている、または不満を持っている'], n: true },
   { h: 'a question (-Q)', hj: '質問する (-Q)', x: ['Q:whether the server is down'], xj: ['Q:サーバーが落ちているかどうか'], n: true },
