@@ -1807,33 +1807,35 @@ x=e:/def main/|S:|e:/raise /|e:/sys\\.exit/ hops=1..2 reverse=1 -> 1 lines
 steps hidden: -e '/def main/'
 x=e:/def main/ hops=1..2 reverse=0 -> 1 lines
 steps shown: -e '/def main/' --step-to -e '/raise /' --hops=1..2
-on true, 2 ends, steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/'
-on true, 1 ends, steps shown: -e '/^ *def helper/' --step-reverse-to -e '/^ *def main/'
-x=e:/^ *def helper/|S:|e:/^ *def main/ hops=0.. reverse=1 -> 2 lines
+on true, 2 ends, steps shown: -e '/^export (async )?function |^ *def main\\b/' --step-to -e '/throw |raise /' -e '/process\\.exit\\(|sys\\.exit\\(/'
+on true, 1 ends, steps shown: -e '/throw |raise /' --step-reverse-to -e '/^export (async )?function |^ *def main\\b/'
+x=e:/throw |raise /|S:|e:/^export (async )?function |^ *def main\\b/ hops=0.. reverse=1 -> 2 lines
 empty end: Enter an end (--step-to)., 0 sent
-groups: [] b b b b b b b b b [multi-step] b b b b
+groups: [] b b b b b b b b b b b [multi-step] b b b b
 pressing every example sends 0
 on false, steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n
 x=e:network or remote connection failure|v:a retry is happening or was attempted hops=0.. reverse=0 -> 1 lines
 disk full: steps hidden: -e 'disk full' -> ok
 meaning, not words: steps hidden: -e 'customer is angry or frustrated' -n -> ok
 a question (-Q): steps hidden: -Q 'whether the server is down' -n -> ok
+where an API key is read: steps hidden: -e 'an API key or token is read from the environment or a settings file' -n -> ok
+a request is retried: steps hidden: -e 'a failed request is retried' -n -> ok
 either meaning, with scores (-p): steps hidden: -e 'customer is asking for a refund' -e 'delivery address change request' -n -p -> ok
 exclude with -v: steps hidden: -e 'network or remote connection failure' -v 'a retry is happening or was attempted' -n -> ok
 regex and meaning together: steps hidden: -e /catch/ -a 'the error is ignored' -n -p -> ok
 stricter (--level strict): steps hidden: -e 'a security risk or dangerous destructive operation' --level=strict -n -> ok
 one line per template (--dedup): steps hidden: -e 'a request failed' --dedup=always -n -> ok
 one sentence at a time: steps hidden: -e 'the author admits they made a mistake' --unit=sentence-by-jev -n -> ok
-calls that raise: steps shown: -e '/^ *def main/' --step-to -e '/raise /' -> ok
-1 to 2 calls away: steps shown: -e '/^ *def main/' --step-to -e '/raise /' --hops=1..2 -> ok
-who calls it (--step-reverse-to): steps shown: -e '/^ *def helper/' --step-reverse-to -e '/^ *def main/' -> ok
-raise or exit (two ends): steps shown: -e '/^ *def main/' --step-to -e '/raise /' -e '/sys\\.exit/' -> ok
-examples en: 13 buttons, \"disk full\" (lang none) .. \"raise or exit (two ends)\" (lang en), heading \"multi-step\" (lang en)
-examples ja: 13 buttons, \"disk full\" (lang none) .. \"raise または exit（終点が2つ）\" (lang ja), heading \"多段階\" (lang ja)
+calls that throw or raise: steps shown: -e '/^export (async )?function |^ *def main\\b/' --step-to -e '/throw |raise /' -> ok
+1 to 2 calls away: steps shown: -e '/^export (async )?function |^ *def main\\b/' --step-to -e '/throw |raise /' --hops=1..2 -> ok
+who reaches it (--step-reverse-to): steps shown: -e '/throw |raise /' --step-reverse-to -e '/^export (async )?function |^ *def main\\b/' -> ok
+throw or exit (two ends): steps shown: -e '/^export (async )?function |^ *def main\\b/' --step-to -e '/throw |raise /' -e '/process\\.exit\\(|sys\\.exit\\(/' -> ok
+examples en: 15 buttons, \"disk full\" (lang none) .. \"throw or exit (two ends)\" (lang en), heading \"multi-step\" (lang en)
+examples ja: 15 buttons, \"disk full\" (lang none) .. \"throw または exit（終点が2つ）\" (lang ja), heading \"多段階\" (lang ja)
 言葉ではなく意味で: steps hidden: -e '顧客が怒っている、または不満を持っている' -n
 -v で除外: steps hidden: -e 'ネットワークまたはリモート接続の失敗' -v 'リトライが行われた、または試みられた' -n
-呼び出し元は誰か (--step-reverse-to): steps shown: -e '/^ *def helper/' --step-reverse-to -e '/^ *def main/'
-examples en: 13 buttons, \"disk full\" (lang none) .. \"raise or exit (two ends)\" (lang en), heading \"multi-step\" (lang en); 0 sent
+どこから至るか (--step-reverse-to): steps shown: -e '/throw |raise /' --step-reverse-to -e '/^export (async )?function |^ *def main\\b/'
+examples en: 15 buttons, \"disk full\" (lang none) .. \"throw or exit (two ends)\" (lang en), heading \"multi-step\" (lang en); 0 sent
 before delete: 1 start row(s)
 after delete: 1 start row(s), value \"\"
 gear opens the dialog: open=true, url \"\" SYS1GREP_URL in the environment wins over this; model \"\" not set: the default; key \"\" not saved, not set: the default; opts \"\"
@@ -1857,6 +1859,17 @@ the <=480px banner (position: fixed) is left as CSS puts it: none
 a resize closes an open tooltip: rank closed
 no request carried a target: ok" "--serve: the sections, the target, the multi-step toggle, the examples (each replaces the page state, sends nothing, and runs; EN / 日本語), the settings dialog, and the hint tooltips"
 eq "$(node -p "JSON.stringify(JSON.parse(require('fs').readFileSync('$HS', 'utf8')))")" '{"model":"m7","key":"k7","opts":["-n","--level","strict"]}' "--serve settings: what the panel saved"
+# #224: every example that needs no Jev (regexes only) finds a line on this repository, with the arguments the page sends
+eq "$($E node --input-type=module -e "
+import { spawnSync } from 'node:child_process';
+import { EXAMPLES, toArgv, initOf } from '../serve.mjs';
+for (const e of EXAMPLES.filter(e => e.x.every(f => f === 'S:' || /^[eav]:\/.*\/\$/.test(f)))) {
+  const r = spawnSync('node', ['../sys1grep.mjs', '-r', ...toArgv(e, initOf([])), '..'], { encoding: 'utf8' });
+  console.log(e.h + ': ' + (r.status === 0 && r.stdout.trim() ? 'found' : 'nothing, exit ' + r.status));
+}")" "calls that throw or raise: found
+1 to 2 calls away: found
+who reaches it (--step-reverse-to): found
+throw or exit (two ends): found" "--serve: the regex-only examples find something on this repository"
 # #206: the settings test wrote under the temp HOME, never the real one; the entry points that can drive --serve refuse the real HOME
 [ "$HS" != "$REALHOME/.config/sys1grep/settings.json" ] || fail "--serve settings: the test wrote the real settings.json"
 code 2 "serve-page.mjs refuses the real HOME" -- env HOME="$REALHOME" node serve-page.mjs http://127.0.0.1:1/
