@@ -98,7 +98,7 @@ const POSTED_MAX = 200 * 1024;
 const body = (req, max = 1 << 16) => new Promise((resolve, reject) => {
   let b = '', n = 0;
   req.setEncoding('utf8');
-  req.on('data', c => { b += c; n += Buffer.byteLength(c); if (n > max) { reject(new Error('too large')); req.pause(); } });
+  req.on('data', c => { b += c; n += Buffer.byteLength(c); if (n > max) { req.tooLarge = true; reject(new Error('too large')); req.pause(); } });
   req.on('end', () => resolve(b));
   req.on('error', reject);
 });
@@ -271,7 +271,8 @@ export function serve(argv) {
     if (p && !p.r && !p.g && !p.git) throw new Error(`--serve: ${dir} is a directory: add -r to search it (${process.env.npm_lifecycle_event === 'serve' ? 'npm run serve --' : 'sys1grep --serve'} -r ${dir.startsWith('-') ? '-- ' : ''}${sh(dir)})`);
   }
   const tpl = launch.some(a => a.startsWith('--template')) ? [] : ['--template=search'];
-  const run = (args, signal, input = '', env = process.env) => new Promise(resolve => {
+  const { SYS1GREP_SUMMARIZE, ...searchEnv } = process.env; // set by the user, it would turn every search into a summary
+  const run = (args, signal, input = '', env = searchEnv) => new Promise(resolve => {
     const child = execFile(process.execPath, [script, ...launch, ...secret, ...args, ...after], { signal, env, maxBuffer: 1 << 28 },
       (e, out, err) => resolve({ code: e ? (typeof e.code === 'number' ? e.code : 2) : 0, out, err }));
     child.stdin.on('error', () => {});
@@ -293,8 +294,10 @@ export function serve(argv) {
   const server = createServer(async (req, res) => {
     const host = req.headers.host;
     const send = (code, type, body) => {
-      res.writeHead(code, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store', 'x-frame-options': 'DENY', ...(type === 'application/json' ? { 'x-content-type-options': 'nosniff' } : {}) });
-      res.end(body);
+      // a body refused unread (too large): the answer goes out, then the connection closes, or the client keeps
+      // uploading into a paused request until Node's request timeout (5 minutes)
+      res.writeHead(code, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store', 'x-frame-options': 'DENY', ...(type === 'application/json' ? { 'x-content-type-options': 'nosniff' } : {}), ...(req.tooLarge ? { connection: 'close' } : {}) });
+      res.end(body, () => { if (req.tooLarge) req.destroy(); });
     };
     // req.url can be something new URL() rejects outright (a bare "//..." parses as scheme-relative and throws
     // ERR_INVALID_URL): answered before any check below, not left to crash the process (an uncaughtException, #166).
@@ -318,7 +321,7 @@ export function serve(argv) {
           if (req.headers.origin !== `http://${host}`) return send(403, 'text/plain', 'forbidden');
           if (!/^application\/json(;|$)/.test(req.headers['content-type'] ?? '')) return send(415, 'text/plain', 'JSON only');
           let patch;
-          try { patch = JSON.parse(await body(req)); } catch { return answer(400, { error: 'not valid JSON' }); }
+          try { patch = JSON.parse(await body(req)); } catch { return req.tooLarge ? answer(413, { error: 'too large: settings are at most 64 KB' }) : answer(400, { error: 'not valid JSON' }); }
           try { saveSettings(patch); } catch (e) { return answer(400, { error: e.message }); }
         } else if (req.method !== 'GET') return send(405, 'text/plain', 'GET or POST');
         return answer(200, settingsView(cli));
@@ -335,11 +338,11 @@ export function serve(argv) {
       const p = fromQuery(url.searchParams, init);
       if (!p || p.x.some(f => f[0] === 'S')) return send(400, 'text/plain', 'bad value');
       let text;
-      try { text = await body(req, POSTED_MAX); } catch { return answer(413, { error: `the results on screen are more than ${POSTED_MAX / 1024} KB to summarize; narrow the search` }); }
+      try { text = await body(req, POSTED_MAX); } catch { return req.tooLarge ? answer(413, { error: `the results on screen are more than ${POSTED_MAX / 1024} KB to summarize; narrow the search` }) : answer(400, { error: 'the results did not arrive whole' }); }
       if (!text.trim()) return answer(400, { error: 'no results to summarize' });
       const ac = new AbortController();
       res.on('close', () => ac.abort());
-      const { code, out, err } = await run(['--color=never', ...toArgv({ ...p, summarize: true }, init), '--format=plain'], ac.signal, text, { ...process.env, SYS1GREP_SUMMARIZE: 'stdin' });
+      const { code, out, err } = await run(['--color=never', ...toArgv({ ...p, summarize: true }, init), '--format=plain'], ac.signal, text, { ...searchEnv, SYS1GREP_SUMMARIZE: 'stdin' });
       return answer(200, code ? { error: err.trim() || `exit ${code}` } : { text: out });
     }
     const kind = url.pathname.slice(1);

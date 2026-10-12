@@ -1656,6 +1656,9 @@ for o in --r -rC1 -nrC1 -rj8 -h -nh --l; do
   printf '{"opts":["%s"]}' "$o" >"$tmp/post.json"
   eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: opts refuses $o"
 done
+# more than 64 KB is refused as too large, and the connection closes (#232 review): no wait for the upload
+node -e "process.stdout.write(JSON.stringify({ model: 'x'.repeat(70000) }))" >"$tmp/post.json"
+eq "$(post -H "$SK" -H "$SO" -H "$SJ") $(field j.error <"$tmp/post.out")" '413 "too large: settings are at most 64 KB"' "--serve settings: a body over 64 KB"
 # url and a URL summarizer must be http(s); a tool name (not a URL) is not checked
 printf '{"url":"not a url"}' >"$tmp/post.json"
 eq "$(post -H "$SK" -H "$SO" -H "$SJ")" "400" "--serve settings: a bad url is refused"
@@ -1712,7 +1715,7 @@ rm -f "$HS"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=jev&dedup=always" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); j.error || 'ok'")" "ok" "--serve: --step-to drops rank and dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # launch values the page must carry: -g unchecked, a summary instruction, the key kept out of the page
-$E SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
+$E SYS1GREP_SUMMARIZE=stdin SYS1GREP_URL=$base/v1 node ../sys1grep.mjs --serve -n --dedup=always --summarize=cat --summarize-prompt=hello --suggest 'Q:why is it slow' --suggest=e:disk\ full --suggest=plain --sys1-api-key=SECRETKEY123 "$F" >"$tmp/serve2.url" 2>/dev/null &
 serve=$!
 i=0; while [ ! -s "$tmp/serve2.url" ]; do i=$((i + 1)); [ $i -lt 200 ] || fail "--serve (launch options) did not start"; sleep 0.05; done
 U=$(cat "$tmp/serve2.url"); BASE=${U%%\?*} K=${U#*k=}
@@ -1720,7 +1723,7 @@ eq "$(curl -s "$U" | grep -c SECRETKEY123 || true)" "0" "--serve: the key is not
 eq "$(curl -s -H "x-sys1grep-token: $K" "${BASE}settings" | field 'j.key')" '[false,"cmd"]' "--serve settings: a launch --sys1-api-key wins, by source only"
 eq "$(curl -s "$U" | grep -c -- '--summarize-prompt' || true)" "1" "--serve: the launch summary instruction is a control's value"
 eq "$(curl -s "$U" | grep -c 'SUGGEST = \[{"h":"why is it slow","x":\["Q:why is it slow"\],"q":"Q"},{"h":"disk full","x":\["e:disk full"\],"q":"e"},{"h":"plain","x":\["Q:plain"\],"q":"Q"}\]')" "1" "--serve: --suggest, both forms, a bare text is a question"
-eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt"
+eq "$(curl -s "${BASE}results?k=$K&x=e:cat&rank=&summarize=0" | node -pe "JSON.parse(require('fs').readFileSync(0)).error || 'ok'")" "ok" "--serve: results with a launch --summarize-prompt (and SYS1GREP_SUMMARIZE in --serve's environment, not passed on)"
 eq "$(curl -s "${BASE}results?k=$K&x=e:cat&x=S:&x=e:owl&rank=" | node -pe "const j = JSON.parse(require('fs').readFileSync(0)); (j.error || 'ok').replace(/.*cannot be combined.*/, 'combined')")" "ok" "--serve: --step-to with a launch --dedup"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # a search the page abandons (Stop) ends its child: a server that never answers, a request given up after 1 s
@@ -1942,6 +1945,20 @@ eq "$(sp 'x=e:helper&x=S:&x=e:raise' -H "Origin: ${BASE%/}" -H "$ST" --data-bina
 eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H "$ST" --data-binary ' ')" "400" "--serve summarize: nothing to summarize"
 head -c 204801 /dev/zero | tr '\0' a >"$tmp/sp.big"
 eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H "$ST" --data-binary @"$tmp/sp.big") $(field j.error <"$tmp/sp.out")" '413 "the results on screen are more than 200 KB to summarize; narrow the search"' "--serve summarize: an oversized body is refused, saying why"
+node -e "process.stdout.write('あ'.repeat(70000))" >"$tmp/sp.big" # 70,000 characters, 210,000 bytes: the bound is in bytes
+eq "$(sp 'x=e:helper' -H "Origin: ${BASE%/}" -H "$ST" --data-binary @"$tmp/sp.big")" "413" "--serve summarize: the bound counts bytes, not characters"
+# far over the bound, from a client that sends the whole body before it reads (as a browser's fetch may): the 413 comes
+# and the connection closes, so the upload ends at once instead of stalling against a request the server stopped reading
+eq "$(node --input-type=module -e "
+import { request } from 'node:http';
+const [base, token] = process.argv.slice(1), u = new URL('summarize?x=e:helper', base);
+let status = 'none';
+const req = request(u, { method: 'POST', headers: { 'x-sys1grep-token': token, origin: u.origin, 'content-type': 'text/plain' } }, res => { status = res.statusCode; res.resume(); });
+const t = setTimeout(() => { console.log('still sending after 10 s, ' + status); process.exit(0); }, 10000);
+const done = () => { clearTimeout(t); console.log('ended, ' + status); };
+req.on('error', done).on('finish', done);
+req.end(Buffer.alloc(20e6, 97));
+" "$BASE" "$K")" "ended, 413" "--serve summarize: 20 MB is refused and the upload ends at once"
 rm -f "$HS"
 kill $serve 2>/dev/null; wait $serve 2>/dev/null || true
 # two --serve (npm run serve adds one): the last one's port is used and neither reaches the child
